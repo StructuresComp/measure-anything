@@ -10,20 +10,22 @@ import argparse
 import glob
 import os
 from stemSkel import stemSkeletonization
+from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--scaling_factor', type=int, default=100, help='Define scaling factor in percentage to scale image')
     parser.add_argument('--threshold', type=float, default=0.3, help='Specify threshold. Line segments with the midpoint lower than the threshold will be identified. Ex) 0.5 corresponds to half of the image')
     parser.add_argument('--input_folder', type=str, required=True, help='Specify input folder of the binary image')
     parser.add_argument('--visualize', type=bool, default=False, help='If True, visualize the perpendicular line segments')
     args = parser.parse_args()
 
     for file in glob.glob(os.path.join(args.input_folder, '*.png')):
-        # Read binary image as grayscale image
-
-        current_stem = stemSkeletonization(threshold=args.threshold, window=20, stride=10, image_file=file)
+        # Define the stemSkeletonization object
+        current_stem = stemSkeletonization(threshold=args.threshold, window=70, stride=15, image_file=file)
         current_stem.generate_line_segment_pairs(visualize=True, save_images=True)
+
+        # Save the end coordinates of the line segments
+        current_stem.save_coordinates(filename=Path(file).stem)
 
 if __name__ == '__main__':
     main()

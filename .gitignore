@@ -1,4 +1,5 @@
-/temp
+/test_masks
+/zed_input
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
