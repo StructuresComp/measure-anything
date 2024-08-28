@@ -4,6 +4,7 @@ from segment_anything import sam_model_registry, SamPredictor
 from ultralytics import YOLO
 import argparse
 import os
+import pudb
 
 # set up CLI argument parser
 parser = argparse.ArgumentParser()
@@ -77,10 +78,17 @@ def create_mask(keypoint_lists, image):
             mask_input=None,
             multimask_output=False,
         )
+
         # mask out pixels not in stem
         mask = mask.astype('uint8')
         mask = np.transpose(mask, axes=[1,2,0])
         out = cv2.bitwise_and(image, image, mask=mask)
+
+        # Draw keypoints on the output image
+        for keypoint in keypoint_list:
+            x, y = keypoint
+            cv2.circle(out, (int(x), int(y)), 25, (0, 0, 255), -1)  # Draw a red circle with larger radius
+
         # write final image
         final_image_path = outdir + f'/mask{index}.jpg'
         cv2.imwrite(final_image_path, out)

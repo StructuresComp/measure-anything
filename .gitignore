@@ -164,4 +164,12 @@ cython_debug/
 
 # Model files
 stemSegment/SAM/sam_vit_h.pth
+stemSegment/SAM/
 stemSegment/YOLO/best.pt
+
+# Data files
+stemSegment/demo/
+stemSegment/output_demo/
+stemSegment/*.zip
+stemSegment/sam2_with_kp_labels/
+stemSegment/segment_with_kp_labels/
