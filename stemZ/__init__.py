@@ -1,1 +1,1 @@
-from .stemZed import stemZed
+from .StemZed import StemZed

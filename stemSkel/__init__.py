@@ -1,1 +1,1 @@
-from .stemSkeletonization import stemSkeletonization
+from .StemSkeletonization import StemSkeletonization
