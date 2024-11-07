@@ -10,11 +10,11 @@
 
 <p align="center">
   <img src="figures/canola.gif" alt="GIF 1" width="49%">
-  <img src="figures/canola.gif" alt="GIF 2" width="49%">
+  <img src="figures/tree1.gif" alt="GIF 2" width="49%">
 </p>
 <p align="center">
-  <img src="figures/canola.gif" alt="GIF 3" width="49%">
-  <img src="figures/canola.gif" alt="GIF 4" width="49%">
+  <img src="figures/tree2.gif" alt="GIF 3" width="49%">
+  <img src="figures/small_tree.gif" alt="GIF 4" width="49%">
 </p>
 <p align="center"><em>Interactive Demo Examples</em></p>
 
