@@ -128,7 +128,9 @@ def main():
             line_segment_coordinates = current_stem.calculate_line_segment_coordinates()
 
             # Calculate pixel-based diameters
-            pixel_diameters = [np.linalg.norm(np.array(coord[0]) - np.array(coord[1])) for coord in line_segment_coordinates]
+            pixel_diameters = [np.linalg.norm(np.array(coord[0]) - np.array(coord[1]))/300 for coord in line_segment_coordinates]
+            
+
 
             # Save pixel diameters
             np.save(f"./output/{directory_name}/pixel_diameters.npy", pixel_diameters)

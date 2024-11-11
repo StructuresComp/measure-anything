@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import logging as log
 
-from clubs_dataset_tools.common import (convert_depth_float_to_uint)
+from clubs_dataset_python.clubs_dataset_tools.common import (convert_depth_float_to_uint)
 
 def depth_to_3d(depth_image, intrinsics):
     # Create a meshgrid of image coordinates
