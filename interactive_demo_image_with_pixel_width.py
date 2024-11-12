@@ -6,6 +6,7 @@ from stemSkel import StemSkeletonization
 from stemSegment import StemSegmentation
 from skimage import morphology
 from demo_utils import get_click_coordinates, display_with_overlay, scale_points
+import pudb
 
 def main():
     # Argument parser setup
@@ -119,12 +120,14 @@ def main():
             skeleton = morphology.medial_axis(current_stem.processed_binary_mask_0_255)
             cv2.imwrite(f"./output/{directory_name}/processed_mask.png",
                         current_stem.processed_binary_mask_0_255)
-
+            current_stem.visualize_skeleton(current_stem.processed_binary_mask_0_255, skeleton, "processed_mask")
+            # pu.db
             # Skeletonize mask and prune
             current_stem.skeletonize_and_prune()
 
             # Compute slope and pixel coordinates of perpendicular line segments
             current_stem.calculate_perpendicular_slope()
+            
             line_segment_coordinates = current_stem.calculate_line_segment_coordinates()
 
             # Calculate pixel-based diameters

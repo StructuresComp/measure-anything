@@ -21,8 +21,8 @@ def depth_to_3d(depth, point, intrinsics):
     cx, cy = intrinsics[0, 2], intrinsics[1, 2]
 
     # Calculate the real-world coordinates
-    x = (point[0] - cx) * depth / fx
-    y = (point[1] - cy) * depth / fy
+    x = (point[0] - cx) * depth / fy
+    y = (point[1] - cy) * depth / fx
     z = depth
 
     # Return 3D point coordinates
@@ -75,6 +75,7 @@ def main():
     # Apply depth intrinsics offsets
     calib_params.depth_intrinsics[0, 2] += depth_x_offset_pixels
     calib_params.depth_intrinsics[1, 2] += depth_y_offset_pixels
+    calib_params.depth_scale = calib_params.depth_scale * 0.3
 
     # Resize the image for display
     display_width, display_height = 1600, 900
@@ -172,54 +173,24 @@ def main():
             current_stem.calculate_perpendicular_slope()
             line_segment_coordinates = current_stem.calculate_line_segment_coordinates()
 
-            # Register depth to RGB if using stereo depth
-            # if args.sensor in ['d415', 'd435'] and args.use_stereo_depth:
-            #     depth_image_float = convert_depth_uint_to_float(depth_image, calib_params.z_scaling, calib_params.depth_scale)
-            #     depth_image_registered, _ = register_depth_image(
-            #         depth_image_float,
-            #         calib_params.rgb_intrinsics,
-            #         calib_params.depth_intrinsics,
-            #         calib_params.depth_extrinsics,
-            #         (calib_params.rgb_height, calib_params.rgb_width),
-            #         calib_params.depth_scale
-            #     )
-            #     depth_image = depth_image_registered.astype(np.uint16)
-
-            # Convert 2D coordinates to 3D and calculate real-world diameters
-
-            # Convert depth image to 3D coordinates in depth frame
-            # depth_points_3d = depth_to_3d(depth_image, calib_params.depth_intrinsics)
-            # log.debug(f"Depth points in 3D (depth frame) calculated with shape: {depth_points_3d.shape}")
-
-            # # Transform depth points to RGB frame
-            # depth_points_in_rgb_frame = cv2.perspectiveTransform(depth_points_3d, calib_params.depth_extrinsics)
-            # log.debug(f"Depth points transformed to RGB frame with shape: {depth_points_in_rgb_frame.shape}")
-
             pixel_diameters_3d = []
             for coord_pair in line_segment_coordinates:
-                point_1 = (int(coord_pair[1] * depth_image.shape[1] / image_rgb.shape[1]), int(coord_pair[1] * depth_image.shape[0] / image_rgb.shape[0]))
-                point_2 = (int(coord_pair[3] * depth_image.shape[1] / image_rgb.shape[1]), int(coord_pair[3] * depth_image.shape[0] / image_rgb.shape[0]))
-
-                # Ensure valid coordinates for depth lookup
-                if not (0 <= point_1[1] < depth_image.shape[0] and 0 <= point_1[0] < depth_image.shape[1] and
-                        0 <= point_2[1] < depth_image.shape[0] and 0 <= point_2[0] < depth_image.shape[1]):
-                    # Skip this pair if coordinates are out of bounds
-                    pixel_diameters_3d.append(np.nan)
-                    continue
+                point_1 = [coord_pair[1], coord_pair[0]]
+                point_2 = [coord_pair[3], coord_pair[2]]
                 
 
                 # Extract depth values for each point
-                depth_1 = depth_image[point_1[1], point_1[0]] / 1000.0  # Convert depth to meters
-                depth_2 = depth_image[point_2[1], point_2[0]] / 1000.0
+                depth_1 = depth_image[point_1[1], point_1[0]] / 1000  # Convert depth to meters
+                depth_2 = depth_image[point_2[1], point_2[0]] / 1000 
 
                 # Debug log to verify depth values
                 log.debug(f"Depth at point 1: {depth_1} meters, Depth at point 2: {depth_2} meters")
 
                 # If depth is not available or is black (0), use the depth at the center of the image
                 if depth_1 == 0:
-                    depth_1 = depth_image[depth_image.shape[0] // 2, depth_image.shape[1] // 2] / 1000.0
+                    depth_1 = depth_image[(point_1[1] + point_2[1]) // 2, (point_1[0] + point_2[0]) // 2] / 1000 
                 if depth_2 == 0:
-                    depth_2 = depth_image[depth_image.shape[0] // 2, depth_image.shape[1] // 2] / 1000.0
+                    depth_2 = depth_image[(point_1[1] + point_2[1]) // 2, (point_1[0] + point_2[0]) // 2] / 1000 
 
                 # If depth is still not available, skip this pair
                 if depth_1 == 0 or depth_2 == 0:
@@ -230,11 +201,8 @@ def main():
                 point_3d_1 = depth_to_3d(depth_1, point_1, calib_params.depth_intrinsics)
                 point_3d_2 = depth_to_3d(depth_2, point_2, calib_params.depth_intrinsics)
 
-                # point_3d_1 = cv2.perspectiveTransform(point_3d_1, calib_params.depth_extrinsics)
-                # point_3d_2 = cv2.perspectiveTransform(point_3d_2, calib_params.depth_extrinsics)
-
                 # Calculate the Euclidean distance between the 3D points in centimeters
-                diameter_3d = np.linalg.norm(np.array(point_3d_1) - np.array(point_3d_2)) * 100
+                diameter_3d = np.linalg.norm(np.array(point_3d_1) - np.array(point_3d_2)) * 100 * calib_params.depth_scale
                 pixel_diameters_3d.append(diameter_3d)
 
             # Save 3D diameters
