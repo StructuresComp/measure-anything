@@ -10,7 +10,7 @@ from stemSkel import StemSkeletonization
 from stemSegment import StemSegmentation
 from stemZ import StemZed
 from skimage import morphology
-from demo_utils import display_with_overlay, scale_points
+from demo_utils import display_with_overlay, scale_points, get_click_coordinates
 from ultralytics import YOLO
 import pudb
 
@@ -47,6 +47,7 @@ def main():
     RGB = sl.Mat()
     frame_count = 0
     display_width, display_height = 1600, 900
+    prompt_data = {'positive_points': [], 'negative_points': [], 'clicked': False}
 
     # Main loop to extract frames and display video
     while True:
@@ -160,11 +161,13 @@ def main():
                             np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
 
                             # Display overlay with segmentation and wait for user input to continue
+                            # Display overlay with segmentation and wait for user input to continue
                             detailed_instructions = [
                                 f"Frame: {frame_count}",
                                 "Press 'q' to stop",
                                 "Press 'n' to go to the next keypoint instance",
-                                "Press 'c' to continue to the next frame"
+                                "Press 'c' to continue to the next frame",
+                                "Press 'm' to modify keypoints"
                             ]
                             while True:
                                 display_with_overlay(image_rgb,
@@ -181,6 +184,125 @@ def main():
                                 # time.sleep(3)
                                 if key == ord('n'):
                                     break
+                                elif key == ord('m'):
+                                    # Set mouse callback for collecting points
+                                    cv2.setMouseCallback("Video Feed", get_click_coordinates, param=prompt_data)
+
+                                    # Wait for user to select points and press 'c' to continue
+                                    while True:
+                                        key = cv2.waitKey(1)
+
+                                        # Detailed instructions
+                                        modify_instructions = [
+                                            f"Frame: {frame_count}",
+                                            "'Left-click' to add positive point",
+                                            "'Ctrl + Left-click' to add negative point",
+                                            "Press 'c' to continue"
+                                        ]
+
+                                        # Display with current positive and negative points
+                                        display_with_overlay(resized_image,
+                                                             prompt_data['positive_points'],
+                                                             prompt_data['negative_points'],
+                                                             [],
+                                                             display_dimensions=[display_width, display_height],
+                                                             diameters=None,
+                                                             save=False,
+                                                             save_name="",
+                                                             mask=None,
+                                                             overlay_text=modify_instructions)
+
+                                        if key == ord('c'):  # Continue once points are collected
+                                            break
+
+                                    # Remove mouse callback
+                                    cv2.setMouseCallback("Video Feed", lambda *unused: None)
+
+                                    # Scale up the prompts to the original image dimensions
+                                    positive_prompts = scale_points(prompt_data['positive_points'], image_rgb.shape[1] / display_width, image_rgb.shape[0] / display_height)
+                                    negative_prompts = scale_points(prompt_data['negative_points'], image_rgb.shape[1] / display_width, image_rgb.shape[0] / display_height) if prompt_data['negative_points'] else None
+
+                                    # Run SAM segmentation & save initial mask
+                                    mask = stemSegObj.inference(image_rgb, positive_prompts, negative_prompts)
+
+                                    if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
+                                        os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
+
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
+                                                (mask * 255).astype(np.uint8))
+
+                                    # Save depth frame
+                                    depth_for_display = sl.Mat()
+                                    zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
+                                    depth_map = depth_for_display.get_data()
+                                    depth_map = depth_map[:, :, 0]
+                                    depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+                                    color_depth_map = cv2.applyColorMap(depth_map_norm, cv2.COLORMAP_JET)
+                                    color_depth_map[depth_map == 0] = [0, 0, 0]
+
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
+
+                                    # Skeletonize, identify perpendicular line segments
+                                    stride = args.stride if args.stride else 10
+                                    threshold = args.measurement_threshold if args.measurement_threshold else 0.95
+                                    current_stem = StemSkeletonization(threshold=threshold, window=25, stride=stride,
+                                                                       image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask.png')
+
+                                    # Load image, preprocess and save the processed mask
+                                    current_stem.load_image()
+                                    current_stem.preprocess()
+                                    processed_mask = current_stem.processed_binary_mask
+
+                                    skeleton = morphology.medial_axis(current_stem.processed_binary_mask_0_255)
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
+                                                current_stem.processed_binary_mask_0_255)
+
+                                    # Skeletonize mask and prune
+                                    current_stem.skeletonize_and_prune()
+
+                                    # Compute slope and pixel coordinates of perpendicular line segments
+                                    current_stem.calculate_perpendicular_slope()
+                                    line_segment_coordinates = current_stem.calculate_line_segment_coordinates()
+
+                                    # Retrieve the depth frame
+                                    stemZedObj = StemZed(zed)
+                                    diameters = stemZedObj.calculate_3d_distance(line_segment_coordinates)
+
+                                    # Save diameters
+                                    np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
+
+                                    # Display overlay with segmentation and wait for 'c' to continue
+                                    overlay_text = [f"Frame:{frame_count}", "Press 'n' to continue"]
+                                    while True:
+                                        display_with_overlay(image_rgb,
+                                                            [],
+                                                            [],
+                                                            line_segment_coordinates,
+                                                            diameters=diameters,
+                                                            display_dimensions=[display_width, display_height],
+                                                            save=False,
+                                                            save_name="",
+                                                            mask=processed_mask,
+                                                            overlay_text=overlay_text)
+                                        key = cv2.waitKey(1)
+                                        if key == ord('n'):
+                                            # Save image when continued
+                                            display_with_overlay(image_rgb,
+                                                                [],
+                                                                [],
+                                                                line_segment_coordinates,
+                                                                diameters=diameters,
+                                                                save=True,
+                                                                display_dimensions=[display_width, display_height],
+                                                                save_name=f"./output/{directory_name}/results_frame_{frame_count}/diameter_result.png",
+                                                                mask=processed_mask,
+                                                                overlay_text=overlay_text)
+                                            break
+                            # Reset prompt data for the next frame
+                            prompt_data['positive_points'].clear()
+                            prompt_data['negative_points'].clear()
+                            prompt_data['clicked'] = False
+
 
                 if key == ord('c'):  # Continue once the frame is done
                     break
