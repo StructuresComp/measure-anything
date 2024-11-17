@@ -10,7 +10,7 @@ from stemSkel import StemSkeletonization
 from stemSegment import StemSegmentation
 from stemZ import StemZed
 from skimage import morphology
-from demo_utils import display_with_overlay, scale_points, get_click_coordinates
+from demo_utils import display_with_overlay, scale_points, get_click_coordinates, StemInstance, display_all_overlay_text
 from ultralytics import YOLO
 import pudb
 
@@ -73,6 +73,9 @@ def main():
                 break
             elif key == ord('s'):  # Stop on 's' to select points
 
+                # List to store stem instances for the current frame
+                stem_instances = []
+
                 # Run YOLO keypoint detection inference on the frame
                 results = keypoint_model(image_rgb)
 
@@ -117,7 +120,7 @@ def main():
                             if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                                 os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
+                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask_{len(stem_instances)}.png",
                                         (mask * 255).astype(np.uint8))
 
                             # Save depth frame
@@ -129,13 +132,13 @@ def main():
                             color_depth_map = cv2.applyColorMap(depth_map_norm, cv2.COLORMAP_JET)
                             color_depth_map[depth_map == 0] = [0, 0, 0]
 
-                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
+                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map_{len(stem_instances)}.png", color_depth_map)
 
                             # Skeletonize, identify perpendicular line segments
                             stride = args.stride if args.stride else 10
                             threshold = args.measurement_threshold if args.measurement_threshold else 0.95
                             current_stem = StemSkeletonization(threshold=threshold, window=25, stride=stride,
-                                                               image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask.png')
+                                                               image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask_{len(stem_instances)}.png')
 
                             # Load image, preprocess and save the processed mask
                             current_stem.load_image()
@@ -143,7 +146,7 @@ def main():
                             processed_mask = current_stem.processed_binary_mask
 
                             skeleton = morphology.medial_axis(current_stem.processed_binary_mask_0_255)
-                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
+                            cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask_{len(stem_instances)}.png",
                                         current_stem.processed_binary_mask_0_255)
 
                             # Skeletonize mask and prune
@@ -158,9 +161,8 @@ def main():
                             diameters = stemZedObj.calculate_3d_distance(line_segment_coordinates)
 
                             # Save diameters
-                            np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
+                            np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters_{len(stem_instances)}.npy", diameters)
 
-                            # Display overlay with segmentation and wait for user input to continue
                             # Display overlay with segmentation and wait for user input to continue
                             detailed_instructions = [
                                 f"Frame: {frame_count}",
@@ -181,8 +183,16 @@ def main():
                                                      mask=processed_mask,
                                                      overlay_text=detailed_instructions)
                                 key = cv2.waitKey(1)
-                                # time.sleep(3)
                                 if key == ord('n'):
+                                    # Create a StemInstance object and add it to the list
+                                    stem_instance = StemInstance(
+                                        keypoints=positive_prompts,
+                                        line_segment_coordinates=line_segment_coordinates,
+                                        diameters=diameters,
+                                        processed_mask=processed_mask,
+                                        overlay_text=[f"Stem {len(stem_instances) + 1}", f"Mean Diameter: {np.mean(diameters):.2f} cm"]
+                                    )
+                                    stem_instances.append(stem_instance)
                                     break
                                 elif key == ord('m'):
                                     # Set mouse callback for collecting points
@@ -228,7 +238,7 @@ def main():
                                     if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                                         os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask_{len(stem_instances)}.png",
                                                 (mask * 255).astype(np.uint8))
 
                                     # Save depth frame
@@ -240,13 +250,13 @@ def main():
                                     color_depth_map = cv2.applyColorMap(depth_map_norm, cv2.COLORMAP_JET)
                                     color_depth_map[depth_map == 0] = [0, 0, 0]
 
-                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map_{len(stem_instances)}.png", color_depth_map)
 
                                     # Skeletonize, identify perpendicular line segments
                                     stride = args.stride if args.stride else 10
                                     threshold = args.measurement_threshold if args.measurement_threshold else 0.95
                                     current_stem = StemSkeletonization(threshold=threshold, window=25, stride=stride,
-                                                                       image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask.png')
+                                                                       image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask_{len(stem_instances)}.png')
 
                                     # Load image, preprocess and save the processed mask
                                     current_stem.load_image()
@@ -254,7 +264,7 @@ def main():
                                     processed_mask = current_stem.processed_binary_mask
 
                                     skeleton = morphology.medial_axis(current_stem.processed_binary_mask_0_255)
-                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
+                                    cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask_{len(stem_instances)}.png",
                                                 current_stem.processed_binary_mask_0_255)
 
                                     # Skeletonize mask and prune
@@ -269,7 +279,7 @@ def main():
                                     diameters = stemZedObj.calculate_3d_distance(line_segment_coordinates)
 
                                     # Save diameters
-                                    np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
+                                    np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters_{len(stem_instances)}.npy", diameters)
 
                                     # Display overlay with segmentation and wait for 'c' to continue
                                     overlay_text = [f"Frame:{frame_count}", "Press 'n' to continue"]
@@ -294,18 +304,45 @@ def main():
                                                                 diameters=diameters,
                                                                 save=True,
                                                                 display_dimensions=[display_width, display_height],
-                                                                save_name=f"./output/{directory_name}/results_frame_{frame_count}/diameter_result.png",
+                                                                save_name=f"./output/{directory_name}/results_frame_{frame_count}/diameter_result_{len(stem_instances)}.png",
                                                                 mask=processed_mask,
                                                                 overlay_text=overlay_text)
                                             break
-                            # Reset prompt data for the next frame
+                            # Reset prompt data for the next instance
                             prompt_data['positive_points'].clear()
                             prompt_data['negative_points'].clear()
                             prompt_data['clicked'] = False
 
 
-                if key == ord('c'):  # Continue once the frame is done
+                    # After processing all stems, display the combined results
+                    current_display_index = 0
+                    while True:
+                        if current_display_index == 0:
+                            # Display the frame with all keypoints
+                            display_all_overlay_text(
+                                image_rgb,
+                                stem_instances,
+                                display_dimensions=[display_width, display_height],
+                                mode='keypoints'
+                            )
+                        else:
+                            # Display the frame with line segments and overlay texts
+                            display_all_overlay_text(
+                                image_rgb,
+                                stem_instances,
+                                display_dimensions=[display_width, display_height],
+                                mode='line_segments'
+                            )
+                        key = cv2.waitKey(0)
+                        if key == ord('n'):
+                            current_display_index = (current_display_index + 1) % 2
+                        else:
+                            break    
+
+                if key == ord('q'):  # Continue once the frame is done
                     break
+                else:
+                    continue
 
     # Close camera and windows
     zed.close()
