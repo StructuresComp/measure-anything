@@ -307,11 +307,12 @@ def main():
                                                                 save_name=f"./output/{directory_name}/results_frame_{frame_count}/diameter_result_{len(stem_instances)}.png",
                                                                 mask=processed_mask,
                                                                 overlay_text=overlay_text)
+                                            # Reset prompt data for the next instance
+                                            prompt_data['positive_points'].clear()
+                                            prompt_data['negative_points'].clear()
+                                            prompt_data['clicked'] = False
                                             break
-                            # Reset prompt data for the next instance
-                            prompt_data['positive_points'].clear()
-                            prompt_data['negative_points'].clear()
-                            prompt_data['clicked'] = False
+                            
 
 
                     # After processing all stems, display the combined results
