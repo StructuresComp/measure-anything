@@ -49,29 +49,41 @@ def get_overlay_box_size(instructions, font_path="./misc/arial.ttf", font_size=1
     return (box_width, box_height)
 
 def adjust_position_to_avoid_overlap(position, box_size, occupied_regions, image_shape):
-    max_attempts = 10
     shift_amount = 20  # Pixels to shift in each attempt
+    max_attempts = 50
     attempt = 0
-    x, y = position
+    x_original, y_original = position
 
-    while attempt < max_attempts:
+    # Generate a list of shifts in a spiral pattern
+    shifts = []
+    for shift in range(0, max_attempts * shift_amount, shift_amount):
+        shifts.extend([
+            (0, shift),            # Down
+            (0, -shift),           # Up
+            (shift, 0),            # Right
+            (-shift, 0),           # Left
+            (shift, shift),        # Down-Right
+            (-shift, shift),       # Down-Left
+            (shift, -shift),       # Up-Right
+            (-shift, -shift)       # Up-Left
+        ])
+
+    for dx, dy in shifts:
+        x = x_original + dx
+        y = y_original + dy
+
+        # Ensure the box is within image boundaries
+        x = max(0, min(x, image_shape[1] - box_size[0]))
+        y = max(0, min(y, image_shape[0] - box_size[1]))
+
         box_left = x
         box_top = y
         box_right = x + box_size[0]
         box_bottom = y + box_size[1]
 
-        # Ensure the box is within image boundaries
-        if box_right > image_shape[1]:
-            x = image_shape[1] - box_size[0]
-        if box_left < 0:
-            x = 0
-        if box_bottom > image_shape[0]:
-            y = image_shape[0] - box_size[1]
-        if box_top < 0:
-            y = 0
+        box = (box_left, box_top, box_right, box_bottom)
 
-        box = (x, y, x + box_size[0], y + box_size[1])
-
+        # Check for overlaps
         overlap = False
         for occupied in occupied_regions:
             if boxes_overlap(box, occupied):
@@ -81,11 +93,9 @@ def adjust_position_to_avoid_overlap(position, box_size, occupied_regions, image
         if not overlap:
             return (x, y)
 
-        # Adjust position to try to avoid overlap
-        y += shift_amount  # Move down
-        attempt += 1
-
-    # If no non-overlapping position found, return the original position
+    # If no non-overlapping position found, return the position adjusted to be within image boundaries
+    x = max(0, min(x_original, image_shape[1] - box_size[0]))
+    y = max(0, min(y_original, image_shape[0] - box_size[1]))
     return (x, y)
 
 def boxes_overlap(box1, box2):

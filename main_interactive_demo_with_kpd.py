@@ -89,6 +89,10 @@ def main():
                         if len(keypoint_set) >= 2:  # Ensure at least two keypoints are available
                             positive_prompts = np.array([(int(keypoint_set[0][0]), int(keypoint_set[0][1])),
                                                 (int(keypoint_set[1][0]), int(keypoint_set[1][1]))])
+                            negative_prompts = np.array([(int(keypoint_set[0][0]) + 25, int(keypoint_set[0][1])),
+                                                (int(keypoint_set[1][0]) + 25, int(keypoint_set[1][1])),
+                                                (int(keypoint_set[0][0]) - 25, int(keypoint_set[0][1])),
+                                                (int(keypoint_set[1][0]) - 25, int(keypoint_set[1][1]))])
 
                             # Display intermediate result with just the points
                             intermediate_instructions = [
@@ -98,7 +102,7 @@ def main():
                             while True:
                                 display_with_overlay(image_rgb,
                                                     positive_prompts,
-                                                    [],
+                                                    negative_prompts,
                                                     [],
                                                     display_dimensions=[display_width, display_height],
                                                     save=False,
@@ -112,10 +116,15 @@ def main():
                             positive_prompts = np.array([(int(keypoint_set[0][0]), int(keypoint_set[0][1])),
                                                 (int(keypoint_set[1][0]), int(keypoint_set[1][1]))])
                             # positive_prompts = np.array([(int(keypoint_set[0][0]), int(keypoint_set[0][1]))])
+                            negative_prompts = np.array([(int(keypoint_set[0][0]) + 25, int(keypoint_set[0][1])),
+                                                (int(keypoint_set[1][0]) + 25, int(keypoint_set[1][1])),
+                                                (int(keypoint_set[0][0]) - 25, int(keypoint_set[0][1])),
+                                                (int(keypoint_set[1][0]) - 25, int(keypoint_set[1][1]))])
                             
 
                             # Run SAM segmentation & save initial mask
-                            mask = stemSegObj.inference(image_rgb, positive_prompts, None)
+                            # mask = stemSegObj.inference(image_rgb, positive_prompts, None)
+                            mask = stemSegObj.inference(image_rgb, positive_prompts, negative_prompts)
 
                             if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                                 os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
