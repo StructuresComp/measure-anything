@@ -86,3 +86,15 @@ The `--stride` and `--measurement_threshold` are optional parameters. `--stride`
     <figcaption style="text-align: center;">stride=10, measurement_threshold=0.95</figcaption>
   </figure>
 </p>
+
+The keypoint detection weights can be obtained from the parameters `--weights`. This automates the point prompts required for segmentation. However, if some automated segmentations are not accurate, the user can interfere to improve it. The automated keypoints could be only positive, or positive and negative prompts based on the video requirement.
+
+<p align="center">
+  <img src="figures/kpd_1_1.gif" alt="GIF 1" width="49%">
+  <img src="figures/kpd_1_2.gif" alt="GIF 2" width="49%">
+</p>
+<p align="center">
+  <img src="figures/kpd_2_1.gif" alt="GIF 3" width="49%">
+  <img src="figures/kpd_2_1.gif" alt="GIF 4" width="49%">
+</p>
+<p align="center"><em>Interactive Automated Demo Examples</em></p>
