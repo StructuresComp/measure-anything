@@ -95,6 +95,6 @@ The keypoint detection weights can be obtained from the parameters `--weights`. 
 </p>
 <p align="center">
   <img src="figures/kpd_2_1.gif" alt="GIF 3" width="49%">
-  <img src="figures/kpd_2_1.gif" alt="GIF 4" width="49%">
+  <img src="figures/kpd_2_2.gif" alt="GIF 4" width="49%">
 </p>
 <p align="center"><em>Interactive Automated Demo Examples</em></p>
