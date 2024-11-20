@@ -4,9 +4,12 @@
 __pycache__/
 .ipynb_checkpoints/
 
-stemSkel/StemSkeletonization_for_iterative.py
-stemSegment/stem_segmentation.py
-stemSegment/segmentAnything.py
+stemSkel/
+stemSegment/
+stemZ/
+
+misc/diameter_analysis_plot.ipynb
+misc/diameter_analysis_plot.svg
 
 # Ignore all image files
 *.png
@@ -20,3 +23,4 @@ segment_anything_2_tracking_demo/
 
 # Ignore model file
 sam2.1_l.pt
+
