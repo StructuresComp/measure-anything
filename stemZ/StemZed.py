@@ -73,3 +73,68 @@ class StemZed:
             diameters[i] = np.linalg.norm(point1_3d - point2_3d)
 
         return diameters
+
+    def calculate_relative_height(self, line_segment_coordinates):
+        # Array to store distances
+        relative_heights = np.zeros(len(line_segment_coordinates))
+
+        # Search for the baseline point
+        for i, (y1, x1, y2, x2) in enumerate(line_segment_coordinates):
+            # Calculate midpoint coordinates
+            x_m = int((x1 + x2) / 2)
+            y_m = int((y1 + y2) / 2)
+
+            # Get depth at midpoint
+            _, midpoint_depth = self.depth.get_value(x_m, y_m)
+
+            # Skip if depth is invalid (e.g., out of range)
+            if midpoint_depth <= 0:
+                continue
+
+            # Undistort the midpoint
+            x_ud, y_ud = self._undistort_point(x_m, y_m)
+
+            # Triangulate the 3D points of (x1, y1) and (x2, y2) using midpoint depth
+            z = midpoint_depth
+            x_3d = (x_ud - self.cx) * z / self.fx
+            y_3d = (y_ud - self.cy) * z / self.fy
+
+            # 3D coordinates of endpoints
+            baseline_point = np.array([x_3d, y_3d, z])
+            break
+
+        if baseline_point is not None:
+            for j in range(i + 1, len(line_segment_coordinates)):
+                y1, x1, y2, x2 = line_segment_coordinates[j]
+
+                # Calculate midpoint coordinates
+                x_m = int((x1 + x2) / 2)
+                y_m = int((y1 + y2) / 2)
+
+                # Get depth at midpoint
+                _, midpoint_depth = self.depth.get_value(x_m, y_m)
+
+                # Skip if depth is invalid (e.g., out of range)
+                if midpoint_depth <= 0:
+                    relative_heights[j] = np.nan  # or set to 0 or another value indicating invalid depth
+                    continue
+
+                # Undistort the midpoint
+                x_ud, y_ud = self._undistort_point(x_m, y_m)
+
+                # Triangulate the 3D points of (x1, y1) and (x2, y2) using midpoint depth
+                z = midpoint_depth
+                x_3d = (x_ud - self.cx) * z / self.fx
+                y_3d = (y_ud - self.cy) * z / self.fy
+
+                # 3D coordinates of endpoints
+                point_3d = np.array([x_3d, y_3d, z])
+
+                # Calculate Euclidean distance between the 3D endpoints
+                relative_heights[j] = np.linalg.norm(point_3d - baseline_point)
+
+        return relative_heights
+
+
+
+

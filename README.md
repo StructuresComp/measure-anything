@@ -1,7 +1,7 @@
-## Measure Anything: Real-time, Multi-stage Stem Diameter Estimation Tool using Segment Anything
+# Measure Anything: Real-time, Multi-stage Vision-based Dimensional Measurement using Segment Anything
 
 ---
-**Measure Anything** is an **interactive** / **automated** stem diameter estimation tool that leverages the [Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment plant stems and provide detailed, real-time diameter analysis. Our streamlined pipeline comprises four stages: 1) segmentation, 2) binary mask processing, 3) skeletonization and pruning, and 4) depth triangulation, allowing for precise stem diameter measurements at user-defined intervals along the stem. We envision that this pipeline can be adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
+**Measure Anything** is an **interactive** / **automated** dimensional measurement tool that leverages the [Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment objects of interest and provide detailed, real-time diameter, length and volume analysis. Our streamlined pipeline comprises four stages: 1) segmentation, 2) binary mask processing, 3) skeleton building, and 4) depth triangulation. We envision that this pipeline can be adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
 
 
 
@@ -19,7 +19,7 @@
 <p align="center"><em>Interactive Demo Examples</em></p>
 
 ---
-## Installation ##
+# Installation #
 ### 1. Create conda environment for managing dependencies ###
 ```bash
 $ conda create --name <environment> python=3.12
@@ -64,25 +64,39 @@ $ pip install ultralytics
 $ pip install scikit-image pillow
 ```
 ---
-## Running the Interactive Demo ##
-The interactive demo requires `.svo` files from the ZED camera. Example `.svo` files can be found [here](https://drive.google.com/drive/folders/1Q6). Run the demo by:
+# Demo #
+## Interactive Demo ##
+The interactive demo requires `.svo` files from the ZED camera. Example `.svo` files can be found [here](https://drive.google.com/drive/folders/1Q6). Run the demo and follow onscreen instructions.
 ```bash
-python main_interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --measurement_threshold 0.95
+python interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --thin_and_long
 ```
+- `--thin_and_long` is a flag variable that decides the skeleton building method. It is recommended for thin, elongated objects only.
+- `--stride (int)` is an optional parameter that determines the distance between consecutive measurements. The default value is 10.
 - Red line indicate valid measurements.
 - Blue line segments indicate invalid measurements, due to unavailable depth data.
 - The calculated stem diameters are available as a numpy file in `./output/{svo_file_name}/{frame}/diameteres.npy` ordered from the bottom most to the topmost line measurements.
 
 
-The `--stride` and `--measurement_threshold` are optional parameters. `--stride` determines the distance between consecutive measurements, while `--measurement_threshold` specifies the proportion of the image height below which measurements are taken. For instance, setting `--measurement_threshold = 0.5` will limit measurements to the bottom half of the image. The default values for these parameters are 10 for `--stride` and 0.95 for `--measurement_threshold`.
+[//]: # (The `--stride` and `--measurement_threshold` are optional parameters. `--stride` determines the distance between consecutive measurements, while `--measurement_threshold` specifies the proportion of the image height below which measurements are taken. For instance, setting `--measurement_threshold = 0.5` will limit measurements to the bottom half of the image. The default values for these parameters are 10 for `--stride` and 0.95 for `--measurement_threshold`.)
 
-<p align="center">
-  <figure style="display: inline-block; width: 49%; margin: 0;">
-    <img src="figures/stride30_ms0p3.png" alt="GIF 3" width="100%">
-    <figcaption style="text-align: center;">stride=30, measurement_threshold=0.3</figcaption>
-  </figure>
-  <figure style="display: inline-block; width: 49%; margin: 0;">
-    <img src="figures/stride10_ms0p95.png" alt="GIF 4" width="100%">
-    <figcaption style="text-align: center;">stride=10, measurement_threshold=0.95</figcaption>
-  </figure>
-</p>
+[//]: # (<p align="center">)
+
+[//]: # (  <figure style="display: inline-block; width: 49%; margin: 0;">)
+
+[//]: # (    <img src="figures/stride30_ms0p3.png" alt="GIF 3" width="100%">)
+
+[//]: # (    <figcaption style="text-align: center;">stride=30, measurement_threshold=0.3</figcaption>)
+
+[//]: # (  </figure>)
+
+[//]: # (  <figure style="display: inline-block; width: 49%; margin: 0;">)
+
+[//]: # (    <img src="figures/stride10_ms0p95.png" alt="GIF 4" width="100%">)
+
+[//]: # (    <figcaption style="text-align: center;">stride=10, measurement_threshold=0.95</figcaption>)
+
+[//]: # (  </figure>)
+
+[//]: # (</p>)
+
+## Automated Demo using Keypoint Detection ##

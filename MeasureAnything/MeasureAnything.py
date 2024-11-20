@@ -1,26 +1,27 @@
-
 import numpy as np
-import sklearn
-from sklearn.decomposition import PCA
-from skimage import io
 import cv2
+from sklearn.decomposition import PCA
 from skimage import measure
 from skimage import morphology
 from skimage import graph
-from skimage.filters import threshold_mean
+from sklearn.cluster import DBSCAN
 from collections import deque
 import pyzed.sl as sl
+from ultralytics import SAM
 
 
-class StemSkeletonization:
-    def __init__(self, zed, threshold, stride, window=30, image_file=None):
+class MeasureAnything:
+    def __init__(self, zed, stride, thin_and_long=False, window=30, image_file=None):
+        # SAM model
+        self.model = SAM("sam2.1_l.pt")
+
         self.image_file = image_file
         self.window = int(window)  # Steps in Central difference to compute the local slope
         self.stride = int(stride)  # Increment to next line segment
-        self.threshold = threshold  # Threshold value for range of line segments.
-                                    # e.g. 0.5 identifies line segments in bottom half of image
+        # self.threshold = threshold  # Threshold value for range of line segments.
+        # e.g. 0.5 identifies line segments in bottom half of image
 
-        self.loaded_grayscale_image = None
+        self.thin_and_long = thin_and_long
         self.initial_binary_mask = None
         self.processed_binary_mask = None
         self.processed_binary_mask_0_255 = None
@@ -32,53 +33,52 @@ class StemSkeletonization:
         self.slope = {}
         self.line_segment_coordinates = None
 
+        # ZED camera
         self.zed = zed
         self.depth = sl.Mat()
         self.zed.retrieve_measure(self.depth, sl.MEASURE.DEPTH)
-
-        # Get camera intrinsics
         calibration_params = zed.get_camera_information().camera_configuration.calibration_parameters
         self.fx, self.fy = calibration_params.left_cam.fx, calibration_params.left_cam.fy
         self.cx, self.cy = calibration_params.left_cam.cx, calibration_params.left_cam.cy
-
-        # # Distortion parameters
         # Distortion factor : [k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4]
         self.k1, self.k2, self.p1, self.p2, self.k3 = calibration_params.left_cam.disto[0:5]
 
+    def detect_mask(self, image, positive_prompts, negative_prompts=None):
+        # Stack prompts
+        prompts = np.vstack([positive_prompts, negative_prompts]) if negative_prompts is not None \
+            else positive_prompts
+        # Create labels for positive (1) and negative (0) prompts
+        labels = np.zeros(prompts.shape[0], dtype=np.int8)
+        labels[:positive_prompts.shape[0]] = 1
 
-    def load_image(self):
-        # Read grayscale image
-        self.loaded_grayscale_image = io.imread(self.image_file, as_gray=True)
+        # Run SAM2 prediction with prompts and labels
+        masks = self.model(image, points=[prompts], labels=[labels])
+        final_mask = masks[0].masks.data[0].cpu().numpy()
 
-        # Convert to binary image
-        image_ones = np.ones((self.loaded_grayscale_image.shape[0], self.loaded_grayscale_image.shape[1]))
-        image_zeros = np.zeros((self.loaded_grayscale_image.shape[0], self.loaded_grayscale_image.shape[1]))
-        image_binary = np.where(self.loaded_grayscale_image < threshold_mean(self.loaded_grayscale_image),
-                                image_zeros, image_ones)
-        self.initial_binary_mask = image_binary.astype(np.uint8)
+        self.initial_binary_mask = final_mask
 
     def preprocess(self):
         # Pre-processing: Remove small objects
         mask_in_process = morphology.remove_small_objects(self.initial_binary_mask, min_size=100)
 
-        # # Connected Component Analysis
-        # label_image = measure.label(mask_in_process, background=0)
-        #
-        # # Find the properties of connected components
-        # props = measure.regionprops(label_image)
-        #
-        # # Find the largest connected component (assuming it's the stem)
-        # largest_area = 0
-        # largest_component = None
-        # for prop in props:
-        #     if prop.area > largest_area:
-        #         largest_area = prop.area
-        #         largest_component = prop
-        #
-        # # Create a mask for the largest connected component
-        # mask_in_process = np.zeros_like(mask_in_process)
-        # mask_in_process[label_image == largest_component.label] = 1
-        mask_in_process = self._preserve_largest_area(mask_in_process)
+        # Connected Component Analysis
+        label_image = measure.label(mask_in_process, background=0)
+
+        # Find the properties of connected components
+        props = measure.regionprops(label_image)
+
+        # Find the largest connected component (assuming it's the stem)
+        largest_area = 0
+        largest_component = None
+        for prop in props:
+            if prop.area > largest_area:
+                largest_area = prop.area
+                largest_component = prop
+
+        # Create a mask for the largest connected component
+        mask_in_process = np.zeros_like(mask_in_process)
+        mask_in_process[label_image == largest_component.label] = 1
+
         # Convert the binary mask to 0 and 255 format
         mask_in_process_0_255 = (mask_in_process * 255).astype(np.uint8)
 
@@ -108,69 +108,32 @@ class StemSkeletonization:
         self.processed_binary_mask = (binary_mask_from_polygon > 0).astype(np.uint8)
         self.processed_binary_mask_0_255 = (self.processed_binary_mask * 255).astype(np.uint8)
 
-    @staticmethod
-    def visualize_skeleton(mask, skeleton, filename):
-        # skeleton = morphology.medial_axis(mask)
-        # Convert binary image to an RGB image
-        binary_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-
-        # Define the color for the skeleton overlay (e.g., red)
-        skeleton_color = [0, 0, 255]  # RGB for red
-
-        # Overlay the skeleton
-        binary_rgb[skeleton == 1] = skeleton_color
-
-        # Display the image
-        cv2.imwrite(f"{filename}.png", binary_rgb)
 
     def skeletonize_and_prune(self):
         # Step 1: Apply Medial Axis Transform
         self.skeleton, self.skeleton_distance = morphology.medial_axis(self.processed_binary_mask_0_255,
                                                                        return_distance=True)
-        self.skeleton_coordinates = np.argwhere(self.skeleton==True)
+        #self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "raw_skeleton")
 
         # Step 2: Identify endpoints and intersections
         self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
 
-        # Step 3: Check if there are only two endpoints and return if so
-        # if len(self.endpoints) == 2:
-        #     if self.skeleton_coordinates[0][0] < self.skeleton_coordinates[-1][0]:
-        #         self.skeleton_coordinates = self.skeleton_coordinates[::-1]
-        #     return
+        # Step 3: Prune branches if more than two endpoints exist and re-identify
+        if len(self.endpoints) != 2:
+            self.skeleton = self._prune_short_branches(self.skeleton, self.endpoints,
+                                                       self.intersections, 2 * np.max(self.skeleton_distance))
+            self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
 
-        # Step 3: Prune short branches and check conditions
-        pruned_skeleton = self._prune_short_branches(self.skeleton, self.endpoints,
-                                                     self.intersections, 2 * np.max(self.skeleton_distance))
-        pruned_skeleton = self._preserve_largest_area(pruned_skeleton)
-        self.endpoints, self.intersections = self._identify_key_points(pruned_skeleton)
-
-        # Step 4: Explicitly handle cases with one endpoint and one intersection
-        # if len(self.endpoints) == 1 and len(self.intersections) == 1:
-        #     # Treat the intersection as the second endpoint
-        #     self.endpoints = np.vstack([self.endpoints, self.intersections])
-        #     self.intersections = []  # Clear intersections as it now serves as an endpoint
-
-        if len(self.endpoints) == 2:
-            self.skeleton_coordinates = np.argwhere(pruned_skeleton == True)
-            if self.skeleton_coordinates[0][0] < self.skeleton_coordinates[-1][0]:
-                self.skeleton_coordinates = self.skeleton_coordinates[::-1]
-            self.skeleton = pruned_skeleton
-
-            self.visualize_skeleton(self.processed_binary_mask_0_255, pruned_skeleton, "pruned_skeleton")
-            return
-
-        self.visualize_skeleton(self.processed_binary_mask_0_255, pruned_skeleton, "pruned_skeleton")
+        # self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "pruned_skeleton")
 
         # Step 5: Preserve a single continuous skeleton along path
         # Select two endpoints with the greatest 'y' separation
         start_point = max(self.endpoints, key=lambda x: x[0])  # Endpoint with the highest i value
         end_point = min(self.endpoints, key=lambda x: x[0])  # Endpoint with the lowest i value
 
-        self.skeleton = self._preserve_skeleton_path(pruned_skeleton, start_point, end_point)
-        self.skeleton_coordinates = np.argwhere(self.skeleton == True)
+        self.skeleton_coordinates, self.skeleton = self._preserve_skeleton_path(self.skeleton, start_point, end_point)
         self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
-
-        self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "continuous_skeleton")
+        # self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "continuous_skeleton")
 
         if len(self.endpoints) != 2:
             raise Exception("Number of endpoints of pruned skeleton is not 2")
@@ -229,12 +192,10 @@ class StemSkeletonization:
             # Determine the slope using the skeleton points near the endpoint
             if idx == 0:  # Bottom endpoint
                 y1, x1 = endpoint
-                y2, x2 = self.skeleton_coordinates[self.window]
-                y2, x2 = self.skeleton_coordinates[min(len(self.skeleton_coordinates)-1, self.window)]
+                y2, x2 = self.skeleton_coordinates[min(len(self.skeleton_coordinates) - 1, self.window)]
 
                 outward = -1  # Reverse direction
             elif idx == 1:  # Top endpoint
-                y1, x1 = self.skeleton_coordinates[-1 - self.window]
                 y1, x1 = self.skeleton_coordinates[-min(1 + self.window, len(self.skeleton_coordinates))]
                 y2, x2 = endpoint
                 outward = 1  # Outward direction
@@ -287,7 +248,7 @@ class StemSkeletonization:
 
                 # Stop if an intersection or another endpoint is reached (short branch identified)
                 if (y, x) in intersections_set or ((y, x) in endpoints_set and dist > 0):
-                    # path.pop()  # Exclude the intersection or endpoint itself from the path
+                    path.pop()  # Exclude the intersection or endpoint itself from the path
                     return path, dist
 
                 # Explore 8-connected neighbors
@@ -326,74 +287,67 @@ class StemSkeletonization:
         for y, x in path:
             path_skeleton[y, x] = True
 
-        return path_skeleton
+        return path, path_skeleton
 
     def calculate_perpendicular_slope(self):
 
         # i = self.window  # The first line segment should be at least i = self.window to avoid indexing errors
-        i = 0
+        i = 2
 
         # while i < len(self.skeleton_coordinates) - self.window:
-        while i < len(self.skeleton_coordinates):
+        while i < len(self.skeleton_coordinates) - 2:
             # Check if current skeleton coordinate meets the threshold condition
-            if self.skeleton_coordinates[i][0] <= (1 - self.threshold) * self.skeleton_coordinates[0][0]:
-                break
+            # if self.skeleton_coordinates[i][0] <= (1 - self.threshold) * self.skeleton_coordinates[0][0]:
+            #     break
 
             # Get current key point
             key = tuple(self.skeleton_coordinates[i])
 
             # Calculate the slope using points offset by `self.window` on either side
             y1, x1 = self.skeleton_coordinates[max(0, i - self.window)]
-            y2, x2 = self.skeleton_coordinates[min(len(self.skeleton_coordinates)-1, i + self.window)]
+            y2, x2 = self.skeleton_coordinates[min(len(self.skeleton_coordinates) - 1, i + self.window)]
             self.slope[key] = np.arctan2(y2 - y1, x2 - x1)
 
             # Move to the next point based on stride
             i += self.stride
 
-    def calculate_line_segment_coordinates(self):
-        # Get the dimensions of the binary mask
-        height, width = self.processed_binary_mask_0_255.shape
+    # def calculate_line_segment_coordinates(self):
+    #     # Get the dimensions of the binary mask
+    #     height, width = self.processed_binary_mask_0_255.shape
+    #
+    #     # Create an array to store the coordinates of the line segment endpoints
+    #     line_segment_coordinates = np.zeros((len(self.slope), 4), dtype=int)
+    #
+    #     idx = 0
+    #     for key, val in self.slope.items():
+    #         # Get skeleton point coordinates
+    #         y, x = key  # Reverse the order for correct indexing
+    #         # Calculate the direction vector for the perpendicular line (normal direction)
+    #         dx = -np.sin(val)
+    #         dy = np.cos(val)
+    #
+    #         # Initialize variables to store the endpoints of the line segment
+    #         x1, y1 = x, y
+    #         x2, y2 = x, y
+    #
+    #         # Step outward from the skeleton point until we hit the contour or go out of bounds in both directions
+    #         while (0 <= int(round(y1)) < height and 0 <= int(round(x1)) < width and
+    #                self.processed_binary_mask_0_255[int(round(y1)), int(round(x1))]):  # Move in one direction
+    #             x1 -= dx
+    #             y1 -= dy
+    #         while (0 <= int(round(y2)) < height and 0 <= int(round(x2)) < width and
+    #                self.processed_binary_mask_0_255[int(round(y2)), int(round(x2))]):  # Move in the opposite direction
+    #             x2 += dx
+    #             y2 += dy
+    #
+    #         # Store the integer coordinates of the endpoints
+    #         line_segment_coordinates[idx] = np.array([int(round(y1)), int(round(x1)), int(round(y2)), int(round(x2))])
+    #         idx += 1
+    #
+    #     return line_segment_coordinates
 
-        # Create an array to store the coordinates of the line segment endpoints
-        line_segment_coordinates = np.zeros((len(self.slope), 4), dtype=int)
+    def calculate_line_segment_coordinates_and_depth(self, threshold=0.1):
 
-        idx = 0
-        for key, val in self.slope.items():
-            # Get skeleton point coordinates
-            y, x = key  # Reverse the order for correct indexing
-            # Calculate the direction vector for the perpendicular line (normal direction)
-            dx = -np.sin(val)
-            dy = np.cos(val)
-
-            # Initialize variables to store the endpoints of the line segment
-            x1, y1 = x, y
-            x2, y2 = x, y
-
-            # Step outward from the skeleton point until we hit the contour or go out of bounds in both directions
-            while (0 <= int(round(y1)) < height and 0 <= int(round(x1)) < width and
-                   self.processed_binary_mask_0_255[int(round(y1)), int(round(x1))]):  # Move in one direction
-                x1 -= dx
-                y1 -= dy
-            while (0 <= int(round(y2)) < height and 0 <= int(round(x2)) < width and
-                   self.processed_binary_mask_0_255[int(round(y2)), int(round(x2))]):  # Move in the opposite direction
-                x2 += dx
-                y2 += dy
-
-            # Store the integer coordinates of the endpoints
-            line_segment_coordinates[idx] = np.array([int(round(y1)), int(round(x1)), int(round(y2)), int(round(x2))])
-            idx += 1
-
-        return line_segment_coordinates
-
-    def calculate_line_segment_coordinates_and_depth(self):
-        """
-        Calculates the coordinates of line segments perpendicular to the skeleton points and retrieves depth values
-        at their endpoints. Updates depth values dynamically during outward propagation.
-
-        Returns:
-            line_segment_coordinates (np.ndarray): Array of shape (N, 4) containing line segment endpoints [(y1, x1, y2, x2)].
-            depths (list): List of tuples containing depth values [(depth1, depth2)] for each segment.
-        """
         height, width = self.processed_binary_mask_0_255.shape
         line_segment_coordinates = np.zeros((len(self.slope), 4), dtype=int)
         depths = []
@@ -401,10 +355,6 @@ class StemSkeletonization:
         for idx, (key, val) in enumerate(self.slope.items()):
             # Get skeleton point
             y, x = key
-
-            # Initialize depth at skeleton point
-            status, initial_depth = self.depth.get_value(int(x), int(y))
-            depth1 = depth2 = initial_depth if status == sl.ERROR_CODE.SUCCESS and initial_depth > 0 else np.nan
 
             # Calculate direction vector for perpendicular line (normal direction)
             dx = -np.sin(val)
@@ -419,27 +369,53 @@ class StemSkeletonization:
             x1, y1 = x, y
             x2, y2 = x, y
 
-            # Propagate in one direction
-            while (0 <= int(round(y1)) < height and 0 <= int(round(x1)) < width and
-                   self.processed_binary_mask_0_255[int(round(y1)), int(round(x1))]):
+            # Initialize lists to store valid depth values
+            left_depths = []
+            right_depths = []
+
+            # Get initial depth at the skeleton midpoint
+            status, initial_depth = self.depth.get_value(int(round(x)), int(round(y)))
+            if status != sl.ERROR_CODE.SUCCESS or initial_depth <= 0:
+                depths.append((np.nan, np.nan))
+                continue
+
+            # Propagate in one direction (left)
+            while True:
+                # Update coordinates
                 x1 -= dx
                 y1 -= dy
+
+                # Check bounds
+                if not (0 <= int(round(y1)) < height and 0 <= int(round(x1)) < width):
+                    break
+                if not self.processed_binary_mask_0_255[int(round(y1)), int(round(x1))]:
+                    break
 
                 # Update depth at (x1, y1) if valid
                 status, new_depth = self.depth.get_value(int(round(x1)), int(round(y1)))
                 if status == sl.ERROR_CODE.SUCCESS and new_depth > 0:
-                    depth1 = new_depth
+                    # Append only if within the threshold
+                    if abs(new_depth - initial_depth) <= threshold * initial_depth:
+                        left_depths.append(new_depth)
 
-            # Propagate in the opposite direction
-            while (0 <= int(round(y2)) < height and 0 <= int(round(x2)) < width and
-                   self.processed_binary_mask_0_255[int(round(y2)), int(round(x2))]):
+            # Propagate in the opposite direction (right)
+            while True:
+                # Update coordinates
                 x2 += dx
                 y2 += dy
+
+                # Check bounds
+                if not (0 <= int(round(y2)) < height and 0 <= int(round(x2)) < width):
+                    break
+                if not self.processed_binary_mask_0_255[int(round(y2)), int(round(x2))]:
+                    break
 
                 # Update depth at (x2, y2) if valid
                 status, new_depth = self.depth.get_value(int(round(x2)), int(round(y2)))
                 if status == sl.ERROR_CODE.SUCCESS and new_depth > 0:
-                    depth2 = new_depth
+                    # Append only if within the threshold
+                    if abs(new_depth - initial_depth) <= threshold * initial_depth:
+                        right_depths.append(new_depth)
 
             # Store integer coordinates of endpoints
             line_segment_coordinates[idx] = [
@@ -449,13 +425,54 @@ class StemSkeletonization:
                 int(np.clip(round(x2), 0, width - 1))
             ]
 
-            # Store depths for endpoints
-            depths.append((depth1, depth2))
+            # Calculate median depths or assign NaN if no valid depth values were found
+            median_depth1 = np.median(left_depths) if left_depths else np.nan
+            median_depth2 = np.median(right_depths) if right_depths else np.nan
+            depths.append((median_depth1, median_depth2))
 
-        return line_segment_coordinates, depths
+        return line_segment_coordinates, np.array(depths)
 
     @staticmethod
-    def _identify_key_points(skeleton_map):
+    def filter_and_replace_outliers_zscore(depths, threshold=2.0):
+
+        def is_outlier(value, mean, std, threshold):
+            """Check if a value is an outlier based on z-score."""
+            return abs((value - mean) / std) > threshold if not np.isnan(value) else False
+
+        # Extract depth1 and depth2 as separate lists
+        depth1_list = np.array([d[0] for d in depths])
+        depth2_list = np.array([d[1] for d in depths])
+
+        # Compute mean and standard deviation, ignoring NaN values
+        mean_d1, std_d1 = np.nanmean(depth1_list), np.nanstd(depth1_list)
+        mean_d2, std_d2 = np.nanmean(depth2_list), np.nanstd(depth2_list)
+
+        # Identify outliers and replace them with nearest inlier neighbors
+        def replace_outliers(depth_array, mean, std):
+            filtered = depth_array.copy()
+            for i, value in enumerate(depth_array):
+                if is_outlier(value, mean, std, threshold):
+                    # Find the nearest non-outlier neighbor
+                    left = next((filtered[j] for j in range(i - 1, -1, -1)
+                                 if not is_outlier(filtered[j], mean, std, threshold)), np.nan)
+                    right = next((filtered[j] for j in range(i + 1, len(filtered))
+                                  if not is_outlier(filtered[j], mean, std, threshold)), np.nan)
+
+                    # Replace with the nearest valid neighbor
+                    filtered[i] = left if not np.isnan(left) else right
+                    if np.isnan(filtered[i]):  # If no valid neighbors exist, retain the NaN
+                        filtered[i] = np.nan
+            return filtered
+
+        # Filter depth1 and depth2
+        filtered_depth1 = replace_outliers(depth1_list, mean_d1, std_d1)
+        filtered_depth2 = replace_outliers(depth2_list, mean_d2, std_d2)
+
+        # Combine the filtered results into a list of tuples
+        filtered_depths = [(d1, d2) for d1, d2 in zip(filtered_depth1, filtered_depth2)]
+        return filtered_depths
+
+    def _identify_key_points(self, skeleton_map):
         padded_img = np.zeros((skeleton_map.shape[0] + 2, skeleton_map.shape[1] + 2), dtype=np.uint8)
         padded_img[1:-1, 1:-1] = skeleton_map
         res = cv2.filter2D(src=padded_img, ddepth=-1,
@@ -463,68 +480,57 @@ class StemSkeletonization:
         raw_endpoints = np.argwhere(res == 11) - 1  # To compensate for padding
         raw_intersections = np.argwhere(res > 12) - 1  # To compensate for padding
 
-        # # Consolidate adjacent intersections
-        # refined_intersections = StemSkeletonization._remove_adjacent_intersections(raw_intersections, skeleton_map)
+        # Consolidate adjacent intersections
+        refined_intersections = self._remove_adjacent_intersections(raw_intersections, eps=5, min_samples=1)
 
-        return np.array(raw_endpoints), np.array(raw_intersections)
-
-    @staticmethod
-    def _remove_adjacent_intersections(intersections, skeleton_map):
-        """
-        Removes adjacent intersections by clustering them and replacing each cluster with a single intersection.
-
-        Args:
-            intersections (np.ndarray): Array of detected intersection coordinates.
-            skeleton_map (np.ndarray): Binary skeleton map.
-
-        Returns:
-            np.ndarray: Array of refined intersection coordinates.
-        """
-        # Create a binary mask for intersections
-        intersection_mask = np.zeros_like(skeleton_map, dtype=np.uint8)
-        for y, x in intersections:
-            intersection_mask[y, x] = 1
-
-        # Label connected components in the intersection mask
-        labeled_intersections, num_labels = measure.label(intersection_mask, connectivity=2, return_num=True)
-
-        # Compute the centroid of each labeled component
-        refined_intersections = []
-        for label in range(1, num_labels + 1):
-            # Extract pixels belonging to the current cluster
-            cluster_coords = np.argwhere(labeled_intersections == label)
-
-            # Compute the centroid of the cluster
-            centroid = cluster_coords.mean(axis=0).astype(int)
-
-            # Add the centroid to the refined intersection list
-            refined_intersections.append(tuple(centroid))
-
-        return np.array(refined_intersections)
+        return np.array(raw_endpoints), np.array(refined_intersections)
 
     @staticmethod
-    def _preserve_largest_area(mask):
-        # Connected Component Analysis
-        label_image = measure.label(mask, background=0)
+    def _remove_adjacent_intersections(intersections, eps=5, min_samples=1):
+        if len(intersections) == 0:
+            return []
 
-        # Find the properties of connected components
-        props = measure.regionprops(label_image)
+            # Convert intersections to numpy array
+        intersections_array = np.array(intersections)
 
-        # Find the largest connected component (assuming it's the stem)
-        largest_area = 0
-        largest_component = None
-        for prop in props:
-            if prop.area > largest_area:
-                largest_area = prop.area
-                largest_component = prop
+        # Apply DBSCAN clustering
+        clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(intersections_array)
 
-        # Create a mask for the largest connected component
-        mask_in_process = np.zeros_like(mask)
-        mask_in_process[label_image == largest_component.label] = 1
+        # Extract cluster labels
+        labels = clustering.labels_
 
-        return mask_in_process
+        # Consolidate intersections by taking the mean of each cluster
+        consolidated_intersections = []
+        for label in set(labels):
+            cluster_points = intersections_array[labels == label]
+            consolidated_point = cluster_points[0]
+            consolidated_intersections.append(tuple(consolidated_point))
 
-    def build_skeleton(self):
+        return consolidated_intersections
+
+    # @staticmethod
+    # def _preserve_largest_area(mask):
+    #     # Connected Component Analysis
+    #     label_image = measure.label(mask, background=0)
+    #
+    #     # Find the properties of connected components
+    #     props = measure.regionprops(label_image)
+    #
+    #     # Find the largest connected component (assuming it's the stem)
+    #     largest_area = 0
+    #     largest_component = None
+    #     for prop in props:
+    #         if prop.area > largest_area:
+    #             largest_area = prop.area
+    #             largest_component = prop
+    #
+    #     # Create a mask for the largest connected component
+    #     mask_in_process = np.zeros_like(mask)
+    #     mask_in_process[label_image == largest_component.label] = 1
+    #
+    #     return mask_in_process
+
+    def build_skeleton_from_symmetry_axis(self):
         """
         Build the skeleton of a binary mask for non-thin, non-elongated geometries.
 
@@ -717,13 +723,12 @@ class StemSkeletonization:
         x_undistorted = x_dist * self.fx + self.cx
         y_undistorted = y_dist * self.fy + self.cy
         return x_undistorted, y_undistorted
-    
+
     def calculate_diameter(self, line_segment_coordinates, depth):
         # Array to store diameters
         diameters = np.zeros(len(line_segment_coordinates))
 
         for i, (y1, x1, y2, x2) in enumerate(line_segment_coordinates):
-
             # Undistort the endpoints
             x1_ud, y1_ud = self._undistort_point(x1, y1)
             x2_ud, y2_ud = self._undistort_point(x2, y2)
@@ -744,12 +749,44 @@ class StemSkeletonization:
 
         return diameters
 
-    def calculate_volume(self, line_segment_coordinates, depth):
+    # def calculate_volume(self, line_segment_coordinates, depth):
+    #     # Step 1: Calculate diameters along the segments
+    #     diameters = self.calculate_diameter(line_segment_coordinates, depth)
+    #     total_height = self.calculate_height(line_segment_coordinates, depth)
+    #     # Step 2: Determine height for each segment
+    #     num_segments = len(line_segment_coordinates) - 1
+    #     if num_segments <= 0:
+    #         raise ValueError("At least two line segments are required to calculate volume.")
+    #     h = total_height / num_segments  # Divide total height into equal segments
+    #
+    #     # Step 3: Initialize total volume
+    #     total_volume = 0.0
+    #
+    #     # Step 4: Iterate through consecutive line segments to compute truncated cone volumes
+    #     for i in range(num_segments):
+    #         # Radii at the current and next segments
+    #         r1 = diameters[i] / 2  # Radius at current segment
+    #         r2 = diameters[i + 1] / 2  # Radius at next segment
+    #
+    #         # Volume of the truncated cone
+    #         volume = (1 / 3) * np.pi * h * (r1 ** 2 + r1 * r2 + r2 ** 2)
+    #
+    #         # Add to total volume
+    #         total_volume += volume
+    #
+    #     return total_volume
+
+    def calculate_volume_and_length(self, line_segment_coordinates, depth):
+        """ Only returns volume if all line segments are valid"""
+        if np.any(depth) == np.nan:
+            return np.nan
+
         # Step 1: Calculate diameters along the segments
         diameters = self.calculate_diameter(line_segment_coordinates, depth)
 
-        # Step 2: Initialize volume
+        # Step 2: Initialize total volume, total_length
         total_volume = 0.0
+        total_length = 0.0
 
         # Step 3: Iterate through consecutive line segments to compute truncated cone volumes
         for i in range(len(line_segment_coordinates) - 1):
@@ -767,20 +804,20 @@ class StemSkeletonization:
             x1_ud, y1_ud = self._undistort_point(x1, y1)
             x2_ud, y2_ud = self._undistort_point(x2, y2)
 
-            # Triangulate the 3D points
-            z1 = np.sum(depth[i]) / 2
-            z2 = np.sum(depth[i + 1]) / 2
+            # Triangulate the 3D points using depth
+            z1 = np.sum(depth[i]) / 2  # Average depth of the current segment
+            z2 = np.sum(depth[i + 1]) / 2  # Average depth of the next segment
 
             x1_3d = (x1_ud - self.cx) * z1 / self.fx
             y1_3d = (y1_ud - self.cy) * z1 / self.fy
             x2_3d = (x2_ud - self.cx) * z2 / self.fx
             y2_3d = (y2_ud - self.cy) * z2 / self.fy
 
-            # 3D coordinates of endpoints
+            # 3D coordinates of midpoints
             point1_3d = np.array([x1_3d, y1_3d, z1])
             point2_3d = np.array([x2_3d, y2_3d, z2])
 
-            # Calculate Euclidean distance between the 3D endpoints
+            # Calculate Euclidean distance between the 3D midpoints (height)
             h = np.linalg.norm(point1_3d - point2_3d)
 
             # Volume of the truncated cone
@@ -788,18 +825,19 @@ class StemSkeletonization:
 
             # Add to total volume
             total_volume += volume
+            total_length += h
 
-        return total_volume
+        return total_volume, total_length
 
-    def calculate_height(self, line_segment_coordinates, depth):
+    def calculate_length(self, line_segment_coordinates, depth):
 
         bottommost_line_seg = line_segment_coordinates[0]
         topmost_line_seg = line_segment_coordinates[-1]
 
-        x1 = ( bottommost_line_seg[1] + bottommost_line_seg[3] ) / 2
-        y1 = ( bottommost_line_seg[0] + bottommost_line_seg[2] ) / 2
-        x2 = ( topmost_line_seg[1] + topmost_line_seg[3] ) / 2
-        y2 = ( topmost_line_seg[0] + topmost_line_seg[2] ) / 2
+        x1 = (bottommost_line_seg[1] + bottommost_line_seg[3]) / 2
+        y1 = (bottommost_line_seg[0] + bottommost_line_seg[2]) / 2
+        x2 = (topmost_line_seg[1] + topmost_line_seg[3]) / 2
+        y2 = (topmost_line_seg[0] + topmost_line_seg[2]) / 2
 
         # Undistort the endpoints
         x1_ud, y1_ud = self._undistort_point(x1, y1)
@@ -808,12 +846,56 @@ class StemSkeletonization:
         # Triangulate the 3D points of (x1, y1) and (x2, y2) using depth
         z1 = np.sum(depth[0]) / 2
         z2 = np.sum(depth[-1]) / 2
-        # x1_3d = (x1_ud - self.cx) * z1 / self.fx
+        x1_3d = (x1_ud - self.cx) * z1 / self.fx
         y1_3d = (y1_ud - self.cy) * z1 / self.fy
-        # x2_3d = (x2_ud - self.cx) * z2 / self.fx
+        x2_3d = (x2_ud - self.cx) * z2 / self.fx
         y2_3d = (y2_ud - self.cy) * z2 / self.fy
 
-        height = y2_3d - y1_3d
+        # 3D coordinates of midpoints
+        point1_3d = np.array([x1_3d, y1_3d, z1])
+        point2_3d = np.array([x2_3d, y2_3d, z2])
 
-        return height
-    
+        length = np.linalg.norm(point1_3d - point2_3d)
+        return length
+
+    # Other util functions
+    # @staticmethod
+    # def visualize_skeleton(mask, skeleton, filename):
+    #     # skeleton = morphology.medial_axis(mask)
+    #     # Convert binary image to an RGB image
+    #     binary_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+    #
+    #     # Define the color for the skeleton overlay (e.g., red)
+    #     skeleton_color = [0, 0, 255]  # RGB for red
+    #
+    #     # Overlay the skeleton
+    #     binary_rgb[skeleton == 1] = skeleton_color
+    #
+    #     # Display the image
+    #     cv2.imwrite(f"{filename}.png", binary_rgb)
+    #
+    # @staticmethod
+    # def visualize_line_segment_in_order_cv(line_segment_coordinates, image_size=(500, 500), pause_time=500):
+    #     # Create a fresh blank image
+    #     display_image = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
+    #
+    #     for idx, segment in enumerate(line_segment_coordinates):
+    #         # Draw the current line segment in red
+    #         cv2.line(
+    #             display_image,
+    #             (segment[1], segment[0]),  # (x1, y1)
+    #             (segment[3], segment[2]),  # (x2, y2)
+    #             (0, 0, 255),  # Red color
+    #             thickness=2,
+    #         )
+    #
+    #         # Display the image with the drawn segment
+    #         cv2.imshow("Line Segment Visualization", display_image)
+    #
+    #         # Pause for visualization
+    #         key = cv2.waitKey(pause_time)
+    #         if key == 27:  # Exit if the user presses 'Esc'
+    #             break
+    #
+    #     # Close the OpenCV window after displaying all segments
+    #     cv2.destroyAllWindows()

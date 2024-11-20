@@ -5,10 +5,7 @@ import cv2
 import numpy as np
 import pyzed.sl as sl
 import os
-from stemSkel import StemSkeletonization
-from stemSegment import StemSegmentation
-from stemZ import StemZed
-from skimage import morphology
+from MeasureAnything import MeasureAnything
 from demo_utils import get_click_coordinates, display_with_overlay, scale_points
 
 
@@ -16,17 +13,19 @@ def main():
     # Argument parser setup
     parser = argparse.ArgumentParser(description="Interactive demo of Measure Anything using SAM-2 with point prompts")
     parser.add_argument('--input_svo', type=str, required=True, help='Path to the input .SVO file')
+    parser.add_argument('--thin_and_long', action=argparse.BooleanOptionalAction, help='Flag variable that decides whether to skeletonize or use symmetry axis')
     parser.add_argument('--stride', type=int, help='Stride used to calculate line segments')
-    parser.add_argument('--measurement_threshold', type=float,
-                        help='Threshold ratio. eg. 0.1 calculates line segments within bottom 1/10 of the image')
+    # parser.add_argument('--measurement_threshold', type=float,
+    #                     help='Threshold ratio. eg. 0.1 calculates line segments within bottom 1/10 of the image')
     args = parser.parse_args()
     directory_name = os.path.split(args.input_svo)[1].split('.')[0]
 
+    # Initialize command line inputs
+    stride = args.stride if args.stride else 10
+    # threshold = args.measurement_threshold if args.measurement_threshold else 0.95
+
     # Create a ZED camera object
     zed = sl.Camera()
-
-    # Initialize SAM model
-    stemSegObj = StemSegmentation()
 
     # Initialize the ZED camera, specify depth mode, minimum distance
     init_params = sl.InitParameters(camera_disable_self_calib=True)
@@ -55,9 +54,17 @@ def main():
             image_ocv = RGB.get_data()
             image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGRA2BGR)
 
+            # Retrieve the depth frame
+            # Save depth frame as color
+            depth_for_display = sl.Mat()
+            zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
+            image_depth = depth_for_display.get_data()
+            image_depth = image_depth[:, :, 0]
+
             # Resize the image for display
             display_width, display_height = 1600, 900
             resized_image = cv2.resize(image_rgb, (display_width, display_height))
+            resized_depth = cv2.resize(image_depth, (display_width, display_height))
 
             # Calculate scale factors for x and y
             scale_x = image_rgb.shape[1] / display_width
@@ -65,8 +72,17 @@ def main():
 
             # Display frame with basic instructions
             instructions = ["Press 's' to select frame"]
-            display_with_overlay(resized_image, [], [], [], display_dimensions=[display_width, display_height],
-                                 diameters=None, save=False, save_name="", mask=None, overlay_text=instructions)
+            display_with_overlay(image_rgb,
+                                 image_depth,
+                                 [],
+                                 [],
+                                 [],
+                                 display_dimensions=[display_width, display_height],
+                                 diameters=None,
+                                 save=False,
+                                 save_name="",
+                                 mask=None,
+                                 overlay_text=instructions)
 
             # Wait for key input
             key = cv2.waitKey(1)
@@ -91,11 +107,14 @@ def main():
 
                     # Display with current positive and negative points
                     display_with_overlay(resized_image,
+                                         resized_depth,
                                          prompt_data['positive_points'],
                                          prompt_data['negative_points'],
                                          [],
                                          display_dimensions=[display_width, display_height],
                                          diameters=None,
+                                         volume=None,
+                                         length=None,
                                          save=False,
                                          save_name="",
                                          mask=None,
@@ -112,16 +131,24 @@ def main():
                 negative_prompts = scale_points(prompt_data['negative_points'], scale_x, scale_y) if prompt_data[
                     'negative_points'] else None
 
-                # Run SAM segmentation & save initial mask
-                mask = stemSegObj.inference(image_rgb, positive_prompts, negative_prompts)
-
+                # Create directory to save results
                 if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                     os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
-                            (mask * 255).astype(np.uint8))
+                # TODO: remove / for debugging purposes only
+                # cv2.imwrite(f"rgb_{frame_count}.png", image_rgb)
 
-                # Save depth frame
+                # Initialize MeasureAnything object
+                object = MeasureAnything(zed=zed, window=25, stride=stride, thin_and_long=args.thin_and_long,
+                                         image_file=None)
+                object.detect_mask(image=image_rgb, positive_prompts=positive_prompts,
+                                   negative_prompts=negative_prompts)
+
+                # Save initial mask
+                cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
+                            (object.initial_binary_mask * 255).astype(np.uint8))
+
+                # Save depth frame as color
                 depth_for_display = sl.Mat()
                 zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
                 depth_map = depth_for_display.get_data()
@@ -134,52 +161,51 @@ def main():
 
                 cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
 
-                # Skeletonize, identify perpendicular line segments
-                stride = args.stride if args.stride else 10
-                threshold = args.measurement_threshold if args.measurement_threshold else 0.95
-                current_stem = StemSkeletonization(threshold=threshold, window=25, stride=stride,
-                                                   image_file=f'./output/{directory_name}/results_frame_{frame_count}/initial_mask.png')
-
-                # Load image, preprocess and save the processed mask
-                current_stem.load_image()
-
-                skeleton = morphology.medial_axis((mask * 255).astype(np.uint8))
-                current_stem.visualize_skeleton((mask * 255).astype(np.uint8), skeleton, "unprocessed_mask")
-
-                current_stem.preprocess()
-                processed_mask = current_stem.processed_binary_mask
-
-                skeleton = morphology.medial_axis(current_stem.processed_binary_mask_0_255)
-                current_stem.visualize_skeleton(current_stem.processed_binary_mask_0_255, skeleton, "processed_mask")
+                # Preprocess and save
+                object.preprocess()
+                processed_mask = object.processed_binary_mask
                 cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
-                            current_stem.processed_binary_mask_0_255)
+                            object.processed_binary_mask_0_255)
 
-                # Skeletonize mask and prune
-                current_stem.skeletonize_and_prune()
+                # Skeletonize, obtain skeleton_coordinates
+                if args.thin_and_long:
+                    object.skeletonize_and_prune()
+                    object.augment_skeleton()
 
-                # Compute slope and pixel coordinates of perpendicular line segments
-                current_stem.calculate_perpendicular_slope()
-                line_segment_coordinates = current_stem.calculate_line_segment_coordinates()
+                else:
+                    object.build_skeleton_from_symmetry_axis()
 
-                # Retrieve the depth frame
-                stemZedObj = StemZed(zed)
-                diameters = stemZedObj.calculate_3d_distance(line_segment_coordinates)
-                relative_heights = stemZedObj.calculate_relative_height(line_segment_coordinates)
+                # Obtain perpendicular line segment coordinates, respective depth
+                object.calculate_perpendicular_slope()
+                line_segment_coordinates, depth = object.calculate_line_segment_coordinates_and_depth()
 
-                # Save diameters
+                # TODO: remove / for debugging purposes only
+                # object.visualize_line_segment_in_order_cv(line_segment_coordinates,
+                #                                           image_size=(object.processed_binary_mask_0_255.shape[0],
+                #                                                       object.processed_binary_mask_0_255.shape[1]),
+                #                                           pause_time=500)
+
+                # Calculate dimensional measurements
+                diameters = object.calculate_diameter(line_segment_coordinates, depth)
+                volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
+                length = object.calculate_length(line_segment_coordinates, depth)
+
+                # Save results
                 np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
-
-                # Save relative heights
-                np.save(f"./output/{directory_name}/results_frame_{frame_count}/relative_heights.npy", relative_heights)
+                np.save(f"./output/{directory_name}/results_frame_{frame_count}/volume.npy", volume)
+                np.save(f"./output/{directory_name}/results_frame_{frame_count}/length.npy", length)
 
                 # Display overlay with segmentation and wait for 'c' to continue
                 overlay_text = [f"Frame:{frame_count}", "Press 'c' to continue"]
                 while True:
                     display_with_overlay(image_rgb,
+                                         None,
                                          [],
                                          [],
                                          line_segment_coordinates,
                                          diameters=diameters,
+                                         volume=volume,
+                                         length=length,
                                          display_dimensions=[display_width, display_height],
                                          save=False,
                                          save_name="",
@@ -189,13 +215,16 @@ def main():
                     if key == ord('c'):
                         # Save image when continued
                         display_with_overlay(image_rgb,
+                                             None,
                                              [],
                                              [],
                                              line_segment_coordinates,
                                              diameters=diameters,
+                                             volume=volume,
+                                             length=length,
                                              save=True,
                                              display_dimensions=[display_width, display_height],
-                                             save_name=f"./output/{directory_name}/results_frame_{frame_count}/diameter_result.png",
+                                             save_name=f"./output/{directory_name}/results_frame_{frame_count}/final_result.png",
                                              mask=processed_mask,
                                              overlay_text=overlay_text)
                         break
