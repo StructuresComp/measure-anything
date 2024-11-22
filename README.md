@@ -61,7 +61,7 @@ $ pip install ultralytics
 ```
 ### 5. Install remaining dependencies ###
 ```bash
-$ pip install scikit-image pillow
+$ pip install scikit-image scikit-learn pillow
 ```
 ---
 # Demo #

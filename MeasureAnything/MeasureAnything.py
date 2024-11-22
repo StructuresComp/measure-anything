@@ -9,6 +9,8 @@ from collections import deque
 import pyzed.sl as sl
 from ultralytics import SAM
 
+import pudb
+
 
 class MeasureAnything:
     def __init__(self, zed, stride, thin_and_long=False, window=30, image_file=None):
@@ -33,15 +35,25 @@ class MeasureAnything:
         self.slope = {}
         self.line_segment_coordinates = None
 
-        # ZED camera
-        self.zed = zed
-        self.depth = sl.Mat()
-        self.zed.retrieve_measure(self.depth, sl.MEASURE.DEPTH)
-        calibration_params = zed.get_camera_information().camera_configuration.calibration_parameters
-        self.fx, self.fy = calibration_params.left_cam.fx, calibration_params.left_cam.fy
-        self.cx, self.cy = calibration_params.left_cam.cx, calibration_params.left_cam.cy
-        # Distortion factor : [k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4]
-        self.k1, self.k2, self.p1, self.p2, self.k3 = calibration_params.left_cam.disto[0:5]
+        if zed:
+            # ZED camera
+            self.zed = zed
+            self.depth = sl.Mat()
+            self.zed.retrieve_measure(self.depth, sl.MEASURE.DEPTH)
+            calibration_params = zed.get_camera_information().camera_configuration.calibration_parameters
+            self.fx, self.fy = calibration_params.left_cam.fx, calibration_params.left_cam.fy
+            self.cx, self.cy = calibration_params.left_cam.cx, calibration_params.left_cam.cy
+            # Distortion factor : [k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4]
+            self.k1, self.k2, self.p1, self.p2, self.k3 = calibration_params.left_cam.disto[0:5]
+
+    def update_calibration_params(self, depth, intrinsics, distortion = None):
+        self.depth = depth
+        self.fx, self.fy = intrinsics[1, 1], intrinsics[0, 0]
+        self.cx, self.cy = intrinsics[0, 2], intrinsics[1, 2]
+        if not distortion:
+            self.k1, self.k2, self.p1, self.p2, self.k3 = 0, 0, 0, 0, 0
+        else:
+            self.k1, self.k2, self.p1, self.p2, self.k3 = distortion[0:5]
 
     def detect_mask(self, image, positive_prompts, negative_prompts=None):
         # Stack prompts
@@ -307,7 +319,7 @@ class MeasureAnything:
             y1, x1 = self.skeleton_coordinates[max(0, i - self.window)]
             y2, x2 = self.skeleton_coordinates[min(len(self.skeleton_coordinates) - 1, i + self.window)]
             self.slope[key] = np.arctan2(y2 - y1, x2 - x1)
-
+            
             # Move to the next point based on stride
             i += self.stride
 
@@ -374,11 +386,16 @@ class MeasureAnything:
             right_depths = []
 
             # Get initial depth at the skeleton midpoint
-            status, initial_depth = self.depth.get_value(int(round(x)), int(round(y)))
+            # status, initial_depth = self.depth.get_value(int(round(x)), int(round(y)))
+            if isinstance(self.depth, np.ndarray):
+                initial_depth = self.depth[int(round(y)), int(round(x))]
+                status = sl.ERROR_CODE.SUCCESS  # Assuming access is always successful
+            else:
+                status, initial_depth = self.depth.get_value(int(round(x)), int(round(y)))
             if status != sl.ERROR_CODE.SUCCESS or initial_depth <= 0:
                 depths.append((np.nan, np.nan))
                 continue
-
+            
             # Propagate in one direction (left)
             while True:
                 # Update coordinates
@@ -392,12 +409,17 @@ class MeasureAnything:
                     break
 
                 # Update depth at (x1, y1) if valid
-                status, new_depth = self.depth.get_value(int(round(x1)), int(round(y1)))
+                # status, new_depth = self.depth.get_value(int(round(x1)), int(round(y1)))
+                if isinstance(self.depth, np.ndarray):
+                    new_depth = self.depth[int(round(y1)), int(round(x1))]
+                    status = sl.ERROR_CODE.SUCCESS  # Assuming access is always successful
+                else:
+                    status, new_depth = self.depth.get_value(int(round(x1)), int(round(y1)))
                 if status == sl.ERROR_CODE.SUCCESS and new_depth > 0:
                     # Append only if within the threshold
                     if abs(new_depth - initial_depth) <= threshold * initial_depth:
                         left_depths.append(new_depth)
-
+    
             # Propagate in the opposite direction (right)
             while True:
                 # Update coordinates
@@ -411,7 +433,12 @@ class MeasureAnything:
                     break
 
                 # Update depth at (x2, y2) if valid
-                status, new_depth = self.depth.get_value(int(round(x2)), int(round(y2)))
+                # status, new_depth = self.depth.get_value(int(round(x2)), int(round(y2)))
+                if isinstance(self.depth, np.ndarray):
+                    new_depth = self.depth[int(round(y2)), int(round(x2))]
+                    status = sl.ERROR_CODE.SUCCESS  # Assuming access is always successful
+                else:
+                    status, new_depth = self.depth.get_value(int(round(x2)), int(round(y2)))
                 if status == sl.ERROR_CODE.SUCCESS and new_depth > 0:
                     # Append only if within the threshold
                     if abs(new_depth - initial_depth) <= threshold * initial_depth:
@@ -584,7 +611,7 @@ class MeasureAnything:
 
         # Step 1: Initialize an empty binary mask
         self.skeleton = np.zeros_like(self.processed_binary_mask, dtype=np.uint8)
-
+        
         # Step 2: Set the skeleton coordinates in the binary mask
         for coord in self.skeleton_coordinates:
             y, x = coord
@@ -831,31 +858,70 @@ class MeasureAnything:
 
     def calculate_length(self, line_segment_coordinates, depth):
 
-        bottommost_line_seg = line_segment_coordinates[0]
-        topmost_line_seg = line_segment_coordinates[-1]
+        """
+        Calculate the 3D length between the bottommost and topmost valid line segments.
 
-        x1 = (bottommost_line_seg[1] + bottommost_line_seg[3]) / 2
-        y1 = (bottommost_line_seg[0] + bottommost_line_seg[2]) / 2
-        x2 = (topmost_line_seg[1] + topmost_line_seg[3]) / 2
-        y2 = (topmost_line_seg[0] + topmost_line_seg[2]) / 2
+        Parameters:
+        - line_segment_coordinates: List of line segment coordinates, where each segment is represented as [y1, x1, y2, x2].
+        - depth: List or numpy array of depth values corresponding to each line segment.
+
+        Returns:
+        - length: The Euclidean distance between the two 3D points.
+        """
+        
+        num_segments = len(depth)
+        
+        # Initialize indices
+        bottom_idx = 0
+        top_idx = num_segments - 1
+        
+        # Find the first valid (non-NaN) depth from the bottom
+        while bottom_idx < num_segments and np.isnan(depth[bottom_idx][0]):
+            bottom_idx += 1
+        
+        # Check if a valid bottom index was found
+        if bottom_idx == num_segments:
+            raise ValueError("No valid depth found for the bottommost line segment.")
+        
+        # Find the first valid (non-NaN) depth from the top
+        while top_idx >= 0 and np.isnan(depth[top_idx][0]):
+            top_idx -= 1
+        
+        # Check if a valid top index was found
+        if top_idx < 0:
+            raise ValueError("No valid depth found for the topmost line segment.")
+        
+        # Select the line segments based on the found indices
+        bottommost_line_seg = line_segment_coordinates[bottom_idx]
+        topmost_line_seg = line_segment_coordinates[top_idx]
+        
+        # Calculate the midpoints of the bottommost and topmost line segments
+        x1 = (bottommost_line_seg[1] + bottommost_line_seg[3]) / 2.0
+        y1 = (bottommost_line_seg[0] + bottommost_line_seg[2]) / 2.0
+        x2 = (topmost_line_seg[1] + topmost_line_seg[3]) / 2.0
+        y2 = (topmost_line_seg[0] + topmost_line_seg[2]) / 2.0
 
         # Undistort the endpoints
         x1_ud, y1_ud = self._undistort_point(x1, y1)
         x2_ud, y2_ud = self._undistort_point(x2, y2)
 
-        # Triangulate the 3D points of (x1, y1) and (x2, y2) using depth
-        z1 = np.sum(depth[0]) / 2
-        z2 = np.sum(depth[-1]) / 2
+        # Triangulate the 3D points using depth
+        z1 = np.nanmean(depth[bottom_idx])  # Using nanmean in case there are multiple depth values
+        z2 = np.nanmean(depth[top_idx])
+        
+        # Convert pixel coordinates to 3D coordinates
         x1_3d = (x1_ud - self.cx) * z1 / self.fx
         y1_3d = (y1_ud - self.cy) * z1 / self.fy
         x2_3d = (x2_ud - self.cx) * z2 / self.fx
         y2_3d = (y2_ud - self.cy) * z2 / self.fy
 
-        # 3D coordinates of midpoints
+        # Create 3D points
         point1_3d = np.array([x1_3d, y1_3d, z1])
         point2_3d = np.array([x2_3d, y2_3d, z2])
 
+        # Calculate the Euclidean distance between the two 3D points
         length = np.linalg.norm(point1_3d - point2_3d)
+        
         return length
 
     # Other util functions
@@ -899,3 +965,19 @@ class MeasureAnything:
     #
     #     # Close the OpenCV window after displaying all segments
     #     cv2.destroyAllWindows()
+
+    def depth_to_3d(self, depth, point, intrinsics):
+        """ Convert depth value to 3D coordinates. """
+        # Unpack the point coordinates
+        x, y = point
+
+        # Unpack the intrinsic parameters
+        fx, fy = intrinsics[1, 1], intrinsics[0, 0]
+        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+
+        # Calculate the 3D coordinates
+        z = depth
+        x_3d = (x - cx) * z / fx
+        y_3d = (y - cy) * z / fy
+
+        return x_3d, y_3d, z
