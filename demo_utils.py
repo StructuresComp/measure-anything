@@ -3,6 +3,7 @@
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from plyfile import PlyData, PlyElement
 
 
 def get_click_coordinates(event, x, y, flags, param):
@@ -210,3 +211,34 @@ def scale_points(points, scale_x, scale_y):
     # Scales point coordinates to match the original image dimensions. Input points are in window dimensions.
 
     return np.array([(int(x * scale_x), int(y * scale_y)) for x, y in points])
+
+
+def write_ply_with_lines(filename, points, colors, lines, line_color=(255, 0, 0)):
+    """
+    Writes a PLY file containing points and lines.
+
+    Parameters:
+        filename (str): Path to the output PLY file.
+        points (np.ndarray): Array of shape (N, 3) containing point coordinates.
+        colors (np.ndarray): Array of shape (N, 3) containing RGB colors for each point.
+        lines (list of tuples): List of tuples where each tuple contains two indices defining a line.
+        line_color (tuple): RGB color for the lines (default is red).
+    """
+    # Prepare vertex data
+    vertex = np.array(
+        [tuple(point) + tuple(color) for point, color in zip(points, colors)],
+        dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+               ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+    )
+    vertex_element = PlyElement.describe(vertex, 'vertex')
+
+    # Prepare edge data
+    edge_dtype = [('vertex1', 'i4'), ('vertex2', 'i4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+    edges = np.array(
+        [(*line, *line_color) for line in lines],
+        dtype=edge_dtype
+    )
+    edge_element = PlyElement.describe(edges, 'edge')
+
+    # Write to PLY
+    PlyData([vertex_element, edge_element], text=True).write(filename)

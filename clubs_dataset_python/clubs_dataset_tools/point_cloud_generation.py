@@ -36,12 +36,13 @@ def depth_to_3d(depth_image, intrinsics):
     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
     
     # Extract focal lengths and principal points from the intrinsics matrix
+    # fx, fy = intrinsics[1, 1], intrinsics[0, 0]
     fx, fy = intrinsics[0, 0], intrinsics[1, 1]
     cx, cy = intrinsics[0, 2], intrinsics[1, 2]
     
     # Calculate the real-world coordinates
-    x = (j - cx) * depth_image / fx
-    y = (i - cy) * depth_image / fy
+    x = (i - cx) * depth_image / fx
+    y = (j - cy) * depth_image / fy
     z = depth_image
     
     # Stack into a 3D point cloud

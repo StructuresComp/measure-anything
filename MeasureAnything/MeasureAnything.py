@@ -8,6 +8,7 @@ from sklearn.cluster import DBSCAN
 from collections import deque
 import pyzed.sl as sl
 from ultralytics import SAM
+from scipy.spatial.distance import cdist
 
 import pudb
 
@@ -34,6 +35,8 @@ class MeasureAnything:
         self.intersections = None
         self.slope = {}
         self.line_segment_coordinates = None
+        self.grasp_coordinates = None
+        self.centroid = None
 
         if zed:
             # ZED camera
@@ -46,14 +49,11 @@ class MeasureAnything:
             # Distortion factor : [k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4]
             self.k1, self.k2, self.p1, self.p2, self.k3 = calibration_params.left_cam.disto[0:5]
 
-    def update_calibration_params(self, depth, intrinsics, distortion = None):
+    def update_calibration_params(self, depth, intrinsics, distortion = [0, 0, 0, 0, 0]):
         self.depth = depth
         self.fx, self.fy = intrinsics[1, 1], intrinsics[0, 0]
         self.cx, self.cy = intrinsics[0, 2], intrinsics[1, 2]
-        if not distortion:
-            self.k1, self.k2, self.p1, self.p2, self.k3 = 0, 0, 0, 0, 0
-        else:
-            self.k1, self.k2, self.p1, self.p2, self.k3 = distortion[0:5]
+        self.k1, self.k2, self.p1, self.p2, self.k3 = distortion[0:5]
 
     def detect_mask(self, image, positive_prompts, negative_prompts=None):
         # Stack prompts
@@ -568,6 +568,7 @@ class MeasureAnything:
         """
         # Step 1: Find the closest axis of symmetry
         centerline, centroid = self._find_closest_symmetry_axis(self.processed_binary_mask)
+        self.centroid = centroid
 
         # Step 2: Initialize skeleton points and traverse in both directions
         skeleton_points = []
@@ -966,12 +967,195 @@ class MeasureAnything:
     #     # Close the OpenCV window after displaying all segments
     #     cv2.destroyAllWindows()
 
+    def grasp_stability_score(self, line_segment_coordinates, w1=0.5, w2=0.5, top_k=10):
+        """
+        Identify and return the top K best line segments based on stability scores while ensuring
+        that no two selected line segments are within a specified spatial window to maintain separation.
+        Additionally, exclude segments from the top 10% and bottom 10% indices of the line segments.
+
+        Parameters:
+            line_segment_coordinates (ndarray): Array of shape (n_segments, 4) with [y1, x1, y2, x2].
+            w1 (float): Weight for the average distance component.
+            w2 (float): Weight for the length component.
+            top_k (int): Number of top segments to return.
+
+        Returns:
+            top_segments (ndarray): Array of shape (m, 4) with the top m (<= top_k) line segment coordinates.
+        """
+        if self.centroid is None:
+            raise ValueError("Centroid not defined. Ensure that the skeleton has been built before calculating stability scores.")
+
+        num_segments = len(line_segment_coordinates)
+        if num_segments == 0:
+            return np.array([])  # Return an empty array if there are no segments
+
+        # Calculate exclusion indices (top 10% and bottom 10%)
+        exclusion_ratio = 0.1
+        exclusion_count = int(np.ceil(exclusion_ratio * num_segments))
+        exclude_indices = set(range(0, exclusion_count)) | set(range(num_segments - exclusion_count, num_segments))
+        
+        # Initialize arrays to store metrics
+        avg_distances = np.zeros(num_segments)
+        lengths = np.zeros(num_segments)
+        midpoints = np.zeros((num_segments, 2))  # To store midpoints for distance calculations
+
+        # Compute average distance to centroid and length for each segment
+        for i, (y1, x1, y2, x2) in enumerate(line_segment_coordinates):
+            # Compute distances from endpoints to centroid
+            dist1 = np.linalg.norm([x1 - self.centroid[1], y1 - self.centroid[0]])
+            dist2 = np.linalg.norm([x2 - self.centroid[1], y2 - self.centroid[0]])
+            avg_distances[i] = (dist1 + dist2) / 2.0
+
+            # Compute length of the segment
+            lengths[i] = np.linalg.norm([x2 - x1, y2 - y1])
+
+            # Compute midpoint
+            midpoints[i] = [(x1 + x2) / 2.0, (y1 + y2) / 2.0]
+
+        # Handle cases where all distances or lengths are the same to avoid division by zero
+        if np.max(avg_distances) - np.min(avg_distances) == 0:
+            avg_distances_norm = np.ones(num_segments)
+        else:
+            avg_distances_norm = (avg_distances - np.min(avg_distances)) / (np.max(avg_distances) - np.min(avg_distances))
+
+        if np.max(lengths) - np.min(lengths) == 0:
+            lengths_norm = np.ones(num_segments)
+        else:
+            lengths_norm = (lengths - np.min(lengths)) / (np.max(lengths) - np.min(lengths))
+
+        # Compute base scores (higher scores indicate better stability)
+        # Invert normalized metrics because lower distance and shorter length are preferable
+        scores = w1 * (1 - avg_distances_norm) + w2 * (1 - lengths_norm)
+
+        # Determine window size for spatial separation (5 times the stride in pixels)
+        min_separation = 5 * self.stride  # in pixels
+
+        # Identify local minima in the lengths array within the window
+        local_minima = np.zeros(num_segments, dtype=bool)
+        window_size = 5 * self.stride
+        if window_size < 1:
+            window_size = 1  # Ensure at least a window size of 1
+
+        for i in range(num_segments):
+            # Define the window boundaries
+            start = max(0, i - window_size)
+            end = min(num_segments, i + window_size + 1)
+
+            # Extract the window for comparison
+            window = lengths[start:end]
+
+            # Current segment's length
+            current_length = lengths[i]
+
+            # Check if the current segment's length is the minimum in the window
+            if current_length == np.min(window):
+                local_minima[i] = True
+
+        # Define the reward to be added for local minima
+        reward = 0.1  # Adjust this value as needed
+
+        # Add the reward to segments that are local minima
+        scores[local_minima] += reward
+
+        # Sort the segments by score in descending order
+        sorted_indices = np.argsort(scores)[::-1]
+
+        # Initialize a list to store selected segment indices
+        selected_indices = []
+
+        # Initialize an array to keep track of selected midpoints
+        selected_midpoints = []
+
+        for idx in sorted_indices:
+            # Exclude segments from the top and bottom 10%
+            if idx in exclude_indices:
+                continue  # Skip excluded segments
+
+            current_midpoint = midpoints[idx]
+
+            if not selected_midpoints:
+                # Select the first valid segment
+                selected_indices.append(idx)
+                selected_midpoints.append(current_midpoint)
+            else:
+                # Compute distances from current segment's midpoint to all selected segments' midpoints
+                distances = cdist([current_midpoint], selected_midpoints, metric='euclidean').flatten()
+
+                # Check if all distances are greater than or equal to min_separation
+                if np.all(distances >= min_separation):
+                    selected_indices.append(idx)
+                    selected_midpoints.append(current_midpoint)
+
+            if len(selected_indices) == top_k:
+                break  # Stop if we've selected enough segments
+
+        # Extract the top segments based on the selected indices
+        top_segments = line_segment_coordinates[selected_indices]
+
+        return top_segments, selected_indices
+    
+    def convert_grasp_to_3d(self, grasp_coordinates, depth):
+        """
+        Converts 2D grasp coordinates and their corresponding depth values to 3D coordinates.
+
+        Parameters:
+            grasp_coordinates (list of tuples/lists): Each element contains four values (y1, x1, y2, x2)
+                                                      representing the start and end points of a grasp in pixel coordinates.
+            depth (list of tuples/lists): Each element contains two depth values (z1, z2) corresponding
+                                          to the start and end points of each grasp.
+
+        Returns:
+            list of tuples: Each element is a tuple containing two 3D points (point1_3d, point2_3d),
+                            where each point is represented as a tuple (x, y, z).
+        """
+        # Validate input lengths
+        if len(grasp_coordinates) != len(depth):
+            raise ValueError("The number of grasp coordinates must match the number of depth entries.")
+
+        # List to store 3D grasp coordinates
+        grasp_3d = []
+
+        for i, (y1, x1, y2, x2) in enumerate(grasp_coordinates):
+            # Undistort the endpoints
+            x1_ud, y1_ud = self._undistort_point(x1, y1)
+            x2_ud, y2_ud = self._undistort_point(x2, y2)
+
+            # Retrieve depth values for start and end points
+            try:
+                z1, z2 = depth[i]
+            except ValueError:
+                raise ValueError(f"Depth data for grasp index {i} is invalid or missing.")
+
+            # Check for valid depth values
+            if z1 <= 0 or z2 <= 0:
+                raise ValueError(f"Invalid depth values at grasp index {i}: z1={z1}, z2={z2}")
+
+            # Avoid division by zero in case of invalid depth
+            if self.fx == 0 or self.fy == 0:
+                raise ZeroDivisionError("Focal lengths fx and fy must be non-zero.")
+
+            # Convert pixel coordinates to 3D coordinates using the pinhole camera model
+            x1_3d = (x1_ud - self.cx) * z1 / self.fx
+            y1_3d = (y1_ud - self.cy) * z1 / self.fy
+            x2_3d = (x2_ud - self.cx) * z2 / self.fx
+            y2_3d = (y2_ud - self.cy) * z2 / self.fy
+
+            # 3D coordinates of start and end points
+            point1_3d = (x1_3d, y1_3d, z1)
+            point2_3d = (x2_3d, y2_3d, z2)
+
+            # Append the 3D grasp pair to the list
+            grasp_3d.append((point1_3d, point2_3d))
+
+        return grasp_3d
+
     def depth_to_3d(self, depth, point, intrinsics):
         """ Convert depth value to 3D coordinates. """
         # Unpack the point coordinates
         x, y = point
 
         # Unpack the intrinsic parameters
+        # TODO: Check if the intrinsics are in the correct order
         fx, fy = intrinsics[1, 1], intrinsics[0, 0]
         cx, cy = intrinsics[0, 2], intrinsics[1, 2]
 
@@ -981,3 +1165,59 @@ class MeasureAnything:
         y_3d = (y - cy) * z / fy
 
         return x_3d, y_3d, z
+    
+    def create_gripper_lines(self, grasp_3d):
+        """
+        Creates gripper lines based on 3D grasp points.
+
+        Parameters:
+            grasp_3d (list of tuples): Each tuple contains two 3D points (p1, p2).
+
+        Returns:
+            tuple: (gripper_points, gripper_lines)
+                gripper_points: np.ndarray of shape (M, 3)
+                gripper_lines: list of tuples defining lines
+        """
+        gripper_points = []
+        gripper_lines = []
+        current_index = 0
+
+        for grasp_pair in grasp_3d:
+            p1, p2 = grasp_pair
+            # Calculate midpoint and direction
+            p1 = np.array(p1)
+            p2 = np.array(p2)
+            midpoint = (p1 + p2) / 2
+            direction = p2 - p1
+            norm = np.linalg.norm(direction)
+            if norm == 0:
+                continue
+            direction /= norm
+
+            # Calculate a perpendicular vector
+            if not np.allclose(direction, [0, 0, 1]):
+                perp = np.cross(direction, [0, 0, 1])
+            else:
+                perp = np.cross(direction, [1, 0, 0])
+            perp /= np.linalg.norm(perp)
+
+            # Define gripper dimensions
+            gripper_length = 0.05  # meters
+            gripper_depth = norm  # Width same as distance between grasp points
+
+            # Define gripper points
+            gripper_base_left = midpoint + (perp * (gripper_depth / 2))
+            gripper_base_right = midpoint - (perp * (gripper_depth / 2))
+            gripper_tip_left = gripper_base_left + (direction * gripper_length)
+            gripper_tip_right = gripper_base_right + (direction * gripper_length)
+
+            # Append gripper points
+            gripper_points.extend([gripper_base_left, gripper_tip_left, gripper_base_right, gripper_tip_right])
+
+            # Define lines: base to tip for both fingers
+            gripper_lines.append((current_index, current_index + 1))
+            gripper_lines.append((current_index + 2, current_index + 3))
+            current_index += 4
+
+        return np.array(gripper_points), gripper_lines
+    
