@@ -100,3 +100,30 @@ python interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --thin_a
 [//]: # (</p>)
 
 ## Automated Demo using Keypoint Detection ##
+
+The keypoint detection weights can be specified using the `--weights` parameter. This enables automated point prompting for segmentation. If the automated segmentations are inaccurate, users can manually intervene to refine the results. The keypoints can be configured as positive prompts or a combination of positive and negative prompts, depending on the specific requirements of the video.
+
+<p align="center">
+  <img src="figures/kpd_1_1.gif" alt="KPD GIF 1" width="49%">
+  <img src="figures/kpd_1_2.gif" alt="KPD GIF 2" width="49%">
+</p>
+<p align="center">
+  <img src="figures/kpd_2_1.gif" alt="KPD GIF 3" width="49%">
+  <img src="figures/kpd_2_2.gif" alt="KPD GIF 4" width="49%">
+</p>
+<p align="center"><em>Interactive Automated Demo Examples</em></p>
+
+## Demo on Robotic Grasping
+
+Measure-Anything can be used to provide geometric priors for obtaining optimized grasping points according to a model. In our experiments we are using a simple stability model based on form-closure and perpendicular distance from CoM. However this stability model can be switched with a SOTA deep learning model.
+
+Check `interactive_demo_clubs_3d.py` to run an interactive demonstration on [Clubs-3D](https://clubs.github.io/#:~:text=CLUBS%20is%20an%20RGB%2DD,objects%20packed%20in%20different%20configurations.) dataset. 
+
+<p align="center">
+  <img src="figures/clubs_3d_00.png" alt="CLUBS 1" width="49%">
+</p>
+<p align="center">
+  <img src="figures/clubs_3d_10.png" alt="CLUBS 2" width="49%">
+  <img src="figures/clubs_3d_203.png" alt="CLUBS 3" width="49%">
+</p>
+<p align="center"><em>Robotic Grasping Demo</em></p>

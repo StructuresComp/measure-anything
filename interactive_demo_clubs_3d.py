@@ -48,7 +48,7 @@ def main():
     if image_depth is None:
         print("Error loading depth image file")
         return
-
+    scale = 14.0
     # Load calibration parameters based on sensor type
     calib_params = CalibrationParams()
     if args.sensor == 'd415':
@@ -81,7 +81,7 @@ def main():
     # Main loop for interactive point selection
     while True:
         # Display frame with basic instructions
-        instructions = ["Press 'r' to reset, 'c' to continue, 'q' to quit"]
+        instructions = ["Press 'r' to reset, 'c' to continue, \n'q' to quit"]
         display_with_overlay(resized_image, resized_depth, [], [], [], display_dimensions=[display_width, display_height],
                              diameters=None, save=False, save_name="", mask=None, overlay_text=instructions)
 
@@ -183,6 +183,7 @@ def main():
             # Obtain perpendicular line segment coordinates, respective depth
             object.calculate_perpendicular_slope()
             line_segment_coordinates, depth = object.calculate_line_segment_coordinates_and_depth()
+            depth = depth * scale
 
             # TODO: remove / for debugging purposes only
             # object.visualize_line_segment_in_order_cv(line_segment_coordinates,
@@ -267,17 +268,17 @@ def main():
                     diameters_to_display = grasp_diameters
                     current_overlay_text = overlay_text.copy()
                     if len(current_overlay_text) > 1:
-                        current_overlay_text[1] = "Displaying: Grasp Segments | Press 'g' to toggle"
+                        current_overlay_text[1] = "Displaying: Grasp Segments \nPress 'g' to toggle"
                     else:
-                        current_overlay_text.append("Displaying: Grasp Segments | Press 'g' to toggle")
+                        current_overlay_text.append("Displaying: Grasp Segments \nPress 'g' to toggle")
                 else:
                     segments_to_display = line_segment_coordinates
                     diameters_to_display = diameters
                     current_overlay_text = overlay_text.copy()
                     if len(current_overlay_text) > 1:
-                        current_overlay_text[1] = "Displaying: All Line Segments | Press 'g' to toggle"
+                        current_overlay_text[1] = "Displaying: All Line Segments \nPress 'g' to toggle"
                     else:
-                        current_overlay_text.append("Displaying: All Line Segments | Press 'g' to toggle")
+                        current_overlay_text.append("Displaying: All Line Segments \nPress 'g' to toggle")
 
                 display_with_overlay(image_rgb,
                                         None,
