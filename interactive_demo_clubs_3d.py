@@ -212,11 +212,11 @@ def main():
             masked_depth_image_float = convert_depth_uint_to_float(masked_depth_image, calib_params.z_scaling, calib_params.depth_scale)
             masked_rgb_image_undistorted = cv2.undistort(masked_rgb_image, calib_params.rgb_intrinsics, calib_params.rgb_distortion_coeffs)
 
-            grasp_coordinates, grasp_indices = object.grasp_stability_score(line_segment_coordinates)
+            grasp_coordinates, grasp_indices = object.grasp_stability_score(line_segment_coordinates, 0.8, 0.2)
             grasp_diameters = [diameters[i] for i in grasp_indices]
             grasp_depth = [depth[i] for i in grasp_indices]
 
-            grasp_3D_coordinates = object.convert_grasp_to_3d(grasp_coordinates, grasp_depth)
+            grasp_3D_coordinates = object.convert_grasp_to_3d(grasp_coordinates, grasp_depth, calib_params.rgb_intrinsics)
 
             # Call the function to generate the point cloud
             save_colored_point_cloud_to_ply(masked_rgb_image_undistorted,

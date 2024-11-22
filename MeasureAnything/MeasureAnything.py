@@ -419,6 +419,8 @@ class MeasureAnything:
                     # Append only if within the threshold
                     if abs(new_depth - initial_depth) <= threshold * initial_depth:
                         left_depths.append(new_depth)
+            x1 += dx
+            y1 += dy
     
             # Propagate in the opposite direction (right)
             while True:
@@ -443,6 +445,8 @@ class MeasureAnything:
                     # Append only if within the threshold
                     if abs(new_depth - initial_depth) <= threshold * initial_depth:
                         right_depths.append(new_depth)
+            x2 -= dx
+            y2 -= dy
 
             # Store integer coordinates of endpoints
             line_segment_coordinates[idx] = [
@@ -1093,131 +1097,142 @@ class MeasureAnything:
         top_segments = line_segment_coordinates[selected_indices]
 
         return top_segments, selected_indices
+
+    # def depth_to_3d(self, depth_image, intrinsics):
+    #     # Create a meshgrid of image coordinates
+    #     h, w = depth_image.shape
+    #     i, j = np.meshgrid(np.arange(w), np.arange(h), indexing='xy')
+        
+    #     # Extract focal lengths and principal points from the intrinsics matrix
+    #     # fx, fy = intrinsics[1, 1], intrinsics[0, 0]
+    #     fx, fy = intrinsics[0, 0], intrinsics[1, 1]
+    #     cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+        
+    #     # Calculate the real-world coordinates
+    #     x = (i - cx) * depth_image / fx
+    #     y = (j - cy) * depth_image / fy
+    #     z = depth_image
+        
+    #     # Stack into a 3D point cloud
+    #     points_3d = np.dstack((x, y, z))
+    #     return points_3d
     
-    def convert_grasp_to_3d(self, grasp_coordinates, depth):
+
+    def depth_values_to_3d_points(self, x, y, depth, intrinsics):
         """
-        Converts 2D grasp coordinates and their corresponding depth values to 3D coordinates.
+        Convert depth values to 3D points using the camera intrinsics.
 
         Parameters:
-            grasp_coordinates (list of tuples/lists): Each element contains four values (y1, x1, y2, x2)
-                                                      representing the start and end points of a grasp in pixel coordinates.
-            depth (list of tuples/lists): Each element contains two depth values (z1, z2) corresponding
-                                          to the start and end points of each grasp.
+            x (ndarray): Array of x-coordinates.
+            y (ndarray): Array of y-coordinates.
+            depth (ndarray): Array of depth values.
+            intrinsics (ndarray): Camera intrinsics matrix.
 
         Returns:
-            list of tuples: Each element is a tuple containing two 3D points (point1_3d, point2_3d),
-                            where each point is represented as a tuple (x, y, z).
+            ndarray: Array of 3D points.
         """
-        # Validate input lengths
-        if len(grasp_coordinates) != len(depth):
-            raise ValueError("The number of grasp coordinates must match the number of depth entries.")
-
-        # List to store 3D grasp coordinates
-        grasp_3d = []
-
-        for i, (y1, x1, y2, x2) in enumerate(grasp_coordinates):
-            # Undistort the endpoints
-            x1_ud, y1_ud = self._undistort_point(x1, y1)
-            x2_ud, y2_ud = self._undistort_point(x2, y2)
-
-            # Retrieve depth values for start and end points
-            try:
-                z1, z2 = depth[i]
-            except ValueError:
-                raise ValueError(f"Depth data for grasp index {i} is invalid or missing.")
-
-            # Check for valid depth values
-            if z1 <= 0 or z2 <= 0:
-                raise ValueError(f"Invalid depth values at grasp index {i}: z1={z1}, z2={z2}")
-
-            # Avoid division by zero in case of invalid depth
-            if self.fx == 0 or self.fy == 0:
-                raise ZeroDivisionError("Focal lengths fx and fy must be non-zero.")
-
-            # Convert pixel coordinates to 3D coordinates using the pinhole camera model
-            x1_3d = (x1_ud - self.cx) * z1 / self.fx
-            y1_3d = (y1_ud - self.cy) * z1 / self.fy
-            x2_3d = (x2_ud - self.cx) * z2 / self.fx
-            y2_3d = (y2_ud - self.cy) * z2 / self.fy
-
-            # 3D coordinates of start and end points
-            point1_3d = (x1_3d, y1_3d, z1)
-            point2_3d = (x2_3d, y2_3d, z2)
-
-            # Append the 3D grasp pair to the list
-            grasp_3d.append((point1_3d, point2_3d))
-
-        return grasp_3d
-
-    def depth_to_3d(self, depth, point, intrinsics):
-        """ Convert depth value to 3D coordinates. """
-        # Unpack the point coordinates
-        x, y = point
-
-        # Unpack the intrinsic parameters
-        # TODO: Check if the intrinsics are in the correct order
-        fx, fy = intrinsics[1, 1], intrinsics[0, 0]
+        # Extract focal lengths and principal points from the intrinsics matrix
+        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
         cx, cy = intrinsics[0, 2], intrinsics[1, 2]
 
-        # Calculate the 3D coordinates
-        z = depth
-        x_3d = (x - cx) * z / fx
-        y_3d = (y - cy) * z / fy
+        # Calculate the real-world coordinates
+        x_3d = (x - cx) * depth / fx
+        y_3d = (y - cy) * depth / fy
+        z_3d = depth
 
-        return x_3d, y_3d, z
+        # Stack into a 3D point cloud
+        # points_3d = np.dstack((x_3d, y_3d, z_3d))
+        return [x_3d, y_3d, z_3d]
+
+    def convert_grasp_to_3d(self, grasp, depth_values, rgb_intrinsics):
+        
+        # depth_points_3d = self.depth_to_3d(depth_image, rgb_intrinsics)
+
+        # # Iterate over each grasp pairs ((x1, y1), (x2, y2))
+        # p1_3d = []
+        # p2_3d = []
+        # for x1, y1, x2, y2 in grasp:
+        #     # Extract the 3D points from the depth image
+        #     p1_3d.append(depth_points_3d[x1, y1])
+        #     p2_3d.append(depth_points_3d[x2, y2])
+        
+        # for x1, y1, x2, y2 in grasp:
+        #     # Print the depth values at the grasp points
+        #     print(f"Depth at p1: {depth_image[x1, y1]} meters")
+        #     print(f"Depth at p2: {depth_image[x2, y2]} meters")
+       
+        # return p1_3d, p2_3d
+        # p1_3d = []
+        # p2_3d = []
+        grasp_pair = []
+
+        # Iterate over grasps [x1, y1, x2, y2] and depth values
+        for (y1, x1, y2, x2), (d1, d2) in zip(grasp, depth_values):
+            # Convert depth values to 3D points
+            p1_3d = self.depth_values_to_3d_points(x1, y1, d1, rgb_intrinsics)
+            p2_3d = self.depth_values_to_3d_points(x2, y2, d2, rgb_intrinsics)
+            grasp_pair.append((p1_3d, p2_3d))
+        
+        return grasp_pair
+
     
     def create_gripper_lines(self, grasp_3d):
         """
-        Creates gripper lines based on 3D grasp points.
+        Creates gripper lines based on 3D grasp points, forming a C-like shape aligned along the z-axis.
 
         Parameters:
-            grasp_3d (list of tuples): Each tuple contains two 3D points (p1, p2).
+            grasp_3d (List[Tuple[np.ndarray, np.ndarray]]): 
+                Each tuple contains two 3D points (p1, p2) representing the grasp.
 
         Returns:
-            tuple: (gripper_points, gripper_lines)
-                gripper_points: np.ndarray of shape (M, 3)
-                gripper_lines: list of tuples defining lines
+            Tuple[np.ndarray, List[Tuple[int, int]]]:
+                - gripper_points: np.ndarray of shape (M, 3)
+                - gripper_lines: list of tuples defining lines
         """
         gripper_points = []
         gripper_lines = []
         current_index = 0
 
+        # Define fixed direction along z-axis
+        direction = np.array([0, 0, 1])
+
+        # Define gripper dimensions
+        gripper_length = 0.01  # meters (adjust as needed)
+        gripper_depth = 0.02   # meters (distance between fingers)
+
         for grasp_pair in grasp_3d:
             p1, p2 = grasp_pair
-            # Calculate midpoint and direction
             p1 = np.array(p1)
             p2 = np.array(p2)
             midpoint = (p1 + p2) / 2
-            direction = p2 - p1
-            norm = np.linalg.norm(direction)
-            if norm == 0:
-                continue
-            direction /= norm
+            norm = np.linalg.norm(p2 - p1)
 
-            # Calculate a perpendicular vector
-            if not np.allclose(direction, [0, 0, 1]):
-                perp = np.cross(direction, [0, 0, 1])
-            else:
-                perp = np.cross(direction, [1, 0, 0])
-            perp /= np.linalg.norm(perp)
+            gripper_depth = norm
 
-            # Define gripper dimensions
-            gripper_length = 0.05  # meters
-            gripper_depth = norm  # Width same as distance between grasp points
+            # Define gripper base points symmetrically along x-axis
+            gripper_base_left = midpoint + np.array([0, gripper_depth / 2, 0])
+            gripper_base_right = midpoint - np.array([0, gripper_depth / 2, 0])
 
-            # Define gripper points
-            gripper_base_left = midpoint + (perp * (gripper_depth / 2))
-            gripper_base_right = midpoint - (perp * (gripper_depth / 2))
-            gripper_tip_left = gripper_base_left + (direction * gripper_length)
-            gripper_tip_right = gripper_base_right + (direction * gripper_length)
+            # Define gripper tip points extending along z-axis
+            gripper_tip_left = gripper_base_left + direction * gripper_length / 2
+            gripper_tip_right = gripper_base_right + direction * gripper_length / 2
+
+            gripper_base_left = gripper_base_left - direction * gripper_length / 2
+            gripper_base_right = gripper_base_right - direction * gripper_length / 2
 
             # Append gripper points
             gripper_points.extend([gripper_base_left, gripper_tip_left, gripper_base_right, gripper_tip_right])
 
-            # Define lines: base to tip for both fingers
+            # Define lines:
+            # 1. Base left to Tip left
             gripper_lines.append((current_index, current_index + 1))
+            # 2. Base right to Tip right
             gripper_lines.append((current_index + 2, current_index + 3))
+            # 3. Base left to Base right (forming the bottom of the 'C')
+            gripper_lines.append((current_index, current_index + 2))
+            # 4. Tip left to Tip right (optional, uncomment to close the 'C')
+            # gripper_lines.append((current_index + 1, current_index + 3))
+            
             current_index += 4
 
         return np.array(gripper_points), gripper_lines
-    

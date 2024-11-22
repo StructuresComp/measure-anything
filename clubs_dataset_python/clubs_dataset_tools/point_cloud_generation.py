@@ -7,6 +7,7 @@ creates a point cloud and saves it as a PLY file.
 import cv2
 import numpy as np
 import logging as log
+import pudb
 
 ply_header = '''ply
 format ascii 1.0
