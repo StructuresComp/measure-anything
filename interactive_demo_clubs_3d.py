@@ -7,7 +7,7 @@ import pyzed.sl as sl
 import os
 from MeasureAnything import MeasureAnything
 from plyfile import PlyData
-from demo_utils import get_click_coordinates, display_with_overlay, scale_points, write_ply_with_lines
+from demo_utils import get_click_coordinates, display_with_overlay, scale_points, write_ply_with_lines, get_heatmap_colors
 from clubs_dataset_python.clubs_dataset_tools.common import (CalibrationParams,
                                         convert_depth_uint_to_float)
 from clubs_dataset_python.clubs_dataset_tools.image_registration import (register_depth_image)
@@ -48,7 +48,7 @@ def main():
     if image_depth is None:
         print("Error loading depth image file")
         return
-    scale = 14.0
+    scale = 1.0
     # Load calibration parameters based on sensor type
     calib_params = CalibrationParams()
     if args.sensor == 'd415':
@@ -236,25 +236,54 @@ def main():
                 points = np.vstack([vertex['x'], vertex['y'], vertex['z']]).T
                 colors = np.vstack([vertex['red'], vertex['green'], vertex['blue']]).T
 
-                # Create gripper lines
-                gripper_points, gripper_lines = object.create_gripper_lines(grasp_3D_coordinates)
+                # Generate heatmap colors based on the number of grasp pairs
+                num_grasps = len(grasp_3D_coordinates)
+                heatmap_colors = get_heatmap_colors(num_grasps, cmap_name='viridis')  # Choose your preferred colormap
 
-                # Append gripper points to the point cloud
-                all_points = np.vstack([points, gripper_points])
-                all_colors = np.vstack([colors, np.tile(np.array([255, 0, 0]), (gripper_points.shape[0], 1))])
+                # Initialize lists to collect all gripper lines and their colors
+                all_gripper_lines = []
+                all_gripper_line_colors = []
 
-                # Adjust gripper line indices
-                num_original_points = points.shape[0]
-                adjusted_gripper_lines = [(i + num_original_points, j + num_original_points) for (i, j) in gripper_lines]
+                # Initialize gripper points list
+                all_gripper_points = []
 
+                # Initialize current_index based on existing points
+                current_index = points.shape[0]
+
+                for idx, grasp_pair in enumerate(grasp_3D_coordinates):
+                    # Get the color for this grasp pair
+                    line_color = heatmap_colors[idx]
+                    print(f"Grasp pair {idx + 1} color: {line_color}")
+                    
+                    # Create gripper lines for this grasp pair
+                    gripper_points, gripper_lines, gripper_line_colors = object.create_gripper_lines([grasp_pair], line_color)
+                    
+                    # Append gripper points
+                    all_gripper_points.extend(gripper_points)
+                    
+                    # Adjust line indices based on current_index
+                    adjusted_gripper_lines = [(i + current_index, j + current_index) for (i, j) in gripper_lines]
+                    all_gripper_lines.extend(adjusted_gripper_lines)
+                    
+                    # Append line colors
+                    all_gripper_line_colors.extend(gripper_line_colors)
+                    
+                    # Update current_index
+                    current_index += len(gripper_points)
+                
+                # Append gripper points to the original point cloud
+                all_points = np.vstack([points, np.array(all_gripper_points)])
+                all_colors = np.vstack([colors, 
+                                        np.tile(np.array([255, 0, 0], dtype=np.uint8), (len(all_gripper_points), 1))])  # Original colors
+                
                 # Write combined PLY with points and gripper lines
                 output_ply = f"./output/{directory_name}/results_frame_{frame_count}/object_pcd_with_grasp.ply"
                 write_ply_with_lines(
                     filename=output_ply,
                     points=all_points,
                     colors=all_colors,
-                    lines=adjusted_gripper_lines,
-                    line_color=(255, 0, 0)  # Red color for grippers
+                    lines=all_gripper_lines,
+                    lines_colors=all_gripper_line_colors
                 )
                 print(f"Final PLY saved to: {output_ply}")
 

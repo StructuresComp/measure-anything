@@ -971,7 +971,7 @@ class MeasureAnything:
     #     # Close the OpenCV window after displaying all segments
     #     cv2.destroyAllWindows()
 
-    def grasp_stability_score(self, line_segment_coordinates, w1=0.5, w2=0.5, top_k=10):
+    def grasp_stability_score(self, line_segment_coordinates, w1=0.5, w2=0.5, top_k=7):
         """
         Identify and return the top K best line segments based on stability scores while ensuring
         that no two selected line segments are within a specified spatial window to maintain separation.
@@ -1056,7 +1056,7 @@ class MeasureAnything:
                 local_minima[i] = True
 
         # Define the reward to be added for local minima
-        reward = 0.1  # Adjust this value as needed
+        reward = 0.5  # Adjust this value as needed
 
         # Add the reward to segments that are local minima
         scores[local_minima] += reward
@@ -1176,21 +1176,105 @@ class MeasureAnything:
         return grasp_pair
 
     
-    def create_gripper_lines(self, grasp_3d):
+    # def create_gripper_lines(self, grasp_3d):
+    #     """
+    #     Creates gripper lines based on 3D grasp points, forming a C-like shape aligned along the z-axis.
+
+    #     Parameters:
+    #         grasp_3d (List[Tuple[np.ndarray, np.ndarray]]): 
+    #             Each tuple contains two 3D points (p1, p2) representing the grasp.
+
+    #     Returns:
+    #         Tuple[np.ndarray, List[Tuple[int, int]]]:
+    #             - gripper_points: np.ndarray of shape (M, 3)
+    #             - gripper_lines: list of tuples defining lines
+    #     """
+    #     gripper_points = []
+    #     gripper_lines = []
+    #     current_index = 0
+
+    #     # Define fixed direction along z-axis
+    #     direction = np.array([0, 0, 1])
+
+    #     # Define gripper dimensions
+    #     gripper_length = 0.01  # meters (adjust as needed)
+    #     gripper_depth = 0.02   # meters (distance between fingers)
+    #     thickness = 0.0002      # meters, thickness of the gripper
+
+    #     # Define number of parallel lines per finger to simulate thickness
+    #     num_parallel_lines = 20  # Must be an odd number for central alignment
+
+    #     # Generate offset values for parallel lines
+    #     offsets = np.linspace(-thickness, thickness, num_parallel_lines)
+
+    #     for grasp_pair in grasp_3d:
+    #         p1, p2 = grasp_pair
+    #         p1 = np.array(p1)
+    #         p2 = np.array(p2)
+    #         midpoint = (p1 + p2) / 2
+    #         norm = np.linalg.norm(p2 - p1)
+
+    #         # Update gripper depth based on the grasp pair
+    #         gripper_depth = norm
+
+    #         # Define gripper base center points symmetrically along y-axis
+    #         gripper_base_center_left = midpoint + np.array([0, gripper_depth / 2, 0])
+    #         gripper_base_center_right = midpoint - np.array([0, gripper_depth / 2, 0])
+
+    #         # Define gripper tip center points extending along z-axis
+    #         gripper_tip_center_left = gripper_base_center_left + direction * gripper_length / 2
+    #         gripper_tip_center_right = gripper_base_center_right + direction * gripper_length / 2
+
+    #         # Define base points offset for thickness
+    #         gripper_base_left_centered = gripper_base_center_left - direction * gripper_length / 2
+    #         gripper_base_right_centered = gripper_base_center_right - direction * gripper_length / 2
+
+    #         for offset in offsets:
+    #             # Offset vector along x-axis to simulate thickness
+    #             offset_vector = np.array([offset, 0, 0])
+
+    #             # Offset base and tip points
+    #             gripper_base_left = gripper_base_left_centered + offset_vector
+    #             gripper_base_right = gripper_base_right_centered + offset_vector
+    #             gripper_tip_left = gripper_tip_center_left + offset_vector
+    #             gripper_tip_right = gripper_tip_center_right + offset_vector
+
+    #             # Append gripper points
+    #             gripper_points.extend([gripper_base_left, gripper_tip_left, gripper_base_right, gripper_tip_right])
+
+    #             # Define lines:
+    #             # 1. Base left to Tip left
+    #             gripper_lines.append((current_index, current_index + 1))
+    #             # 2. Base right to Tip right
+    #             gripper_lines.append((current_index + 2, current_index + 3))
+    #             # 3. Base left to Base right (forming the bottom of the 'C')
+    #             gripper_lines.append((current_index, current_index + 2))
+    #             # 4. Tip left to Tip right (optional, uncomment to close the 'C')
+    #             # gripper_lines.append((current_index + 1, current_index + 3))
+                
+    #             current_index += 4
+
+    #     return np.array(gripper_points), gripper_lines
+
+    def create_gripper_lines(self, grasp_3d, line_color):
         """
         Creates gripper lines based on 3D grasp points, forming a C-like shape aligned along the z-axis.
+        Each gripper line is assigned a specific color based on the grasp pair's rank.
 
         Parameters:
             grasp_3d (List[Tuple[np.ndarray, np.ndarray]]): 
                 Each tuple contains two 3D points (p1, p2) representing the grasp.
+            line_color (Tuple[int, int, int]): RGB color for the gripper lines of this grasp pair.
 
         Returns:
-            Tuple[np.ndarray, List[Tuple[int, int]]]:
+            Tuple[np.ndarray, List[Tuple[int, int]], List[Tuple[int, int, int]]]:
                 - gripper_points: np.ndarray of shape (M, 3)
                 - gripper_lines: list of tuples defining lines
+                - gripper_line_colors: list of RGB color tuples for each line
         """
         gripper_points = []
         gripper_lines = []
+        gripper_line_colors = []
         current_index = 0
 
         # Define fixed direction along z-axis
@@ -1245,13 +1329,17 @@ class MeasureAnything:
                 # Define lines:
                 # 1. Base left to Tip left
                 gripper_lines.append((current_index, current_index + 1))
+                gripper_line_colors.append(line_color)
                 # 2. Base right to Tip right
                 gripper_lines.append((current_index + 2, current_index + 3))
+                gripper_line_colors.append(line_color)
                 # 3. Base left to Base right (forming the bottom of the 'C')
                 gripper_lines.append((current_index, current_index + 2))
+                gripper_line_colors.append(line_color)
                 # 4. Tip left to Tip right (optional, uncomment to close the 'C')
                 # gripper_lines.append((current_index + 1, current_index + 3))
-                
+                # gripper_line_colors.append(line_color)
+                    
                 current_index += 4
 
-        return np.array(gripper_points), gripper_lines
+        return np.array(gripper_points), gripper_lines, gripper_line_colors

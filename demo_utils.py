@@ -4,6 +4,9 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from plyfile import PlyData, PlyElement
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import matplotlib.colors as colors
 
 
 def get_click_coordinates(event, x, y, flags, param):
@@ -370,17 +373,68 @@ def scale_points(points, scale_x, scale_y):
 
     return np.array([(int(x * scale_x), int(y * scale_y)) for x, y in points])
 
-
-def write_ply_with_lines(filename, points, colors, lines, line_color=(255, 0, 0)):
+def get_heatmap_colors(num_grasps, cmap_name='viridis'):
     """
-    Writes a PLY file containing points and lines.
+    Generates a list of colors based on the rank of grasp pairs using a colormap.
+ 
+    Parameters:
+        num_grasps (int): Total number of grasp pairs.
+        cmap_name (str): Name of the matplotlib colormap to use.
+ 
+    Returns:
+        List[Tuple[int, int, int]]: List of RGB color tuples.
+    """
+    cmap = cm.get_cmap(cmap_name)
+    norm = colors.Normalize(vmin=0, vmax=num_grasps - 1)
+    scalar_map = cm.ScalarMappable(norm=norm, cmap=cmap)
+    heatmap_colors = []
+    for i in range(num_grasps):
+        rgba = scalar_map.to_rgba(i)
+        # Convert RGBA to RGB tuple with values in 0-255
+        rgb = tuple(int(255 * c) for c in rgba[:3])
+        heatmap_colors.append(rgb)
+    return heatmap_colors
+
+# def write_ply_with_lines(filename, points, colors, lines, line_color=(255, 0, 0)):
+#     """
+#     Writes a PLY file containing points and lines.
+
+#     Parameters:
+#         filename (str): Path to the output PLY file.
+#         points (np.ndarray): Array of shape (N, 3) containing point coordinates.
+#         colors (np.ndarray): Array of shape (N, 3) containing RGB colors for each point.
+#         lines (list of tuples): List of tuples where each tuple contains two indices defining a line.
+#         line_color (tuple): RGB color for the lines (default is red).
+#     """
+#     # Prepare vertex data
+#     vertex = np.array(
+#         [tuple(point) + tuple(color) for point, color in zip(points, colors)],
+#         dtype=[('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+#                ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+#     )
+#     vertex_element = PlyElement.describe(vertex, 'vertex')
+
+#     # Prepare edge data
+#     edge_dtype = [('vertex1', 'i4'), ('vertex2', 'i4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+#     edges = np.array(
+#         [(*line, *line_color) for line in lines],
+#         dtype=edge_dtype
+#     )
+#     edge_element = PlyElement.describe(edges, 'edge')
+
+#     # Write to PLY
+#     PlyData([vertex_element, edge_element], text=True).write(filename)
+
+def write_ply_with_lines(filename, points, colors, lines, lines_colors):
+    """
+    Writes a PLY file containing points and lines with per-line colors.
 
     Parameters:
         filename (str): Path to the output PLY file.
         points (np.ndarray): Array of shape (N, 3) containing point coordinates.
         colors (np.ndarray): Array of shape (N, 3) containing RGB colors for each point.
-        lines (list of tuples): List of tuples where each tuple contains two indices defining a line.
-        line_color (tuple): RGB color for the lines (default is red).
+        lines (List[Tuple[int, int]]): List of tuples where each tuple contains two indices defining a line.
+        lines_colors (List[Tuple[int, int, int]]): List of RGB color tuples for each line.
     """
     # Prepare vertex data
     vertex = np.array(
@@ -392,11 +446,11 @@ def write_ply_with_lines(filename, points, colors, lines, line_color=(255, 0, 0)
 
     # Prepare edge data
     edge_dtype = [('vertex1', 'i4'), ('vertex2', 'i4'), ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-    edges = np.array(
-        [(*line, *line_color) for line in lines],
+    edge_data = np.array(
+        [(*line, *line_color) for line, line_color in zip(lines, lines_colors)],
         dtype=edge_dtype
     )
-    edge_element = PlyElement.describe(edges, 'edge')
+    edge_element = PlyElement.describe(edge_data, 'edge')
 
     # Write to PLY
     PlyData([vertex_element, edge_element], text=True).write(filename)
