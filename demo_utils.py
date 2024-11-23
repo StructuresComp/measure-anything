@@ -7,6 +7,7 @@ from plyfile import PlyData, PlyElement
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as colors
+import pudb
 
 
 def get_click_coordinates(event, x, y, flags, param):
@@ -104,38 +105,89 @@ def boxes_overlap(box1, box2):
     return not (right1 <= left2 or right2 <= left1 or bottom1 <= top2 or bottom2 <= top1)
 
 
-def draw_instructions(image, instructions, position=(10, 10), box_size=(440, 120), font_path="misc/ARIAL.TTF",
-                      font_size=20):
-    """Draws a semi-transparent box with instructions at the specified position on the image using a custom font."""
+# def draw_instructions(image, instructions, position=(10, 10), box_size=(440, 120), font_path="misc/ARIAL.TTF",
+#                       font_size=20):
+#     """Draws a semi-transparent box with instructions at the specified position on the image using a custom font."""
 
-    # Convert OpenCV image to PIL Image in order to write text using loaded font
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+#     # Convert OpenCV image to PIL Image in order to write text using loaded font
+#     pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-    # Draw the semi-transparent rectangle
-    overlay = Image.new("RGBA", pil_image.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    overlay_draw.rectangle(
-        [position, (position[0] + box_size[0], position[1] + box_size[1])],
-        fill=(255, 255, 255, 180)  # White with transparency
-    )
+#     # Draw the semi-transparent rectangle
+#     overlay = Image.new("RGBA", pil_image.size, (255, 255, 255, 0))
+#     overlay_draw = ImageDraw.Draw(overlay)
+#     overlay_draw.rectangle(
+#         [position, (position[0] + box_size[0], position[1] + box_size[1])],
+#         fill=(255, 255, 255, 180)  # White with transparency
+#     )
 
-    # Load custom font
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-    except IOError:
-        print(f"Font file not found: {font_path}. Using default font.")
-        font = ImageFont.load_default()
+#     # Load custom font
+#     try:
+#         font = ImageFont.truetype(font_path, font_size)
+#     except IOError:
+#         print(f"Font file not found: {font_path}. Using default font.")
+#         font = ImageFont.load_default()
 
-    # Draw each line of instruction text
-    y = position[1] + 5
-    for line in instructions:
-        overlay_draw.text((position[0] + 10, y), line, font=font, fill=(0, 0, 0, 255))
-        y += font_size + 5  # Line spacing
+#     # Draw each line of instruction text
+#     y = position[1] + 5
+#     for line in instructions:
+#         overlay_draw.text((position[0] + 10, y), line, font=font, fill=(0, 0, 0, 255))
+#         y += font_size + 5  # Line spacing
 
-    # Convert back to OpenCV format
-    pil_image = Image.alpha_composite(pil_image.convert("RGBA"), overlay).convert("RGB")
+#     # Convert back to OpenCV format
+#     pil_image = Image.alpha_composite(pil_image.convert("RGBA"), overlay).convert("RGB")
 
-    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+#     return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+def draw_instructions(image, text_lines, position, box_size=None, font_path=None, font_size=25):
+    """
+    Draws a semi-transparent box with text instructions on the image.
+    The box size is dynamically calculated based on the text content.
+
+    Parameters:
+    - image (numpy.ndarray): The image to draw on.
+    - text_lines (list of str): Lines of text to display.
+    - position (tuple): (x, y) coordinates for the top-left corner of the box.
+    - box_size (tuple or None): (width, height) of the box. If None, calculated based on text.
+    - font_path (str or None): Path to the TTF font file. If None, default font is used.
+    - font_size (int): Font size for the text.
+
+    Returns:
+    - image (numpy.ndarray): Image with the drawn instructions.
+    """
+    x, y = position
+
+    # Set font
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = font_size / 30  # Adjust font scale based on desired font size
+    font_thickness = 2
+
+    # Calculate size of each text line
+    text_sizes = [cv2.getTextSize(line, font, font_scale, font_thickness)[0] for line in text_lines]
+    text_widths = [size[0] for size in text_sizes]
+    text_heights = [size[1] for size in text_sizes]
+
+    # Determine box size based on text
+    padding = 10  # pixels
+    max_text_width = max(text_widths) if text_widths else 0
+    total_text_height = sum(text_heights) + (10 * (len(text_lines) - 1)) if text_heights else 0
+
+    box_width = max_text_width + 2 * padding
+    box_height = total_text_height + 2 * padding
+
+    # Draw semi-transparent rectangle
+    overlay = image.copy()
+    cv2.rectangle(overlay, (x, y), (x + box_width, y + box_height), (50, 50, 50), -1)  # Dark gray box
+    alpha = 0.6  # Transparency factor
+    cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
+
+    # Draw each line of text
+    for idx, line in enumerate(text_lines):
+        text_size = text_sizes[idx]
+        text_x = x + padding
+        text_y = y + padding + text_size[1] + idx * (text_size[1] + 10)  # 10 pixels between lines
+        cv2.putText(image, line, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+
+    return image
 
 
 # def display_with_overlay(image,
@@ -366,6 +418,181 @@ def display_all_overlay_text(image, stem_instances, display_dimensions, mode='ke
 
     # Show the image with overlays
     cv2.imshow("Video Feed", display_image)
+
+
+def display_with_heatmap_overlay(image,
+                                 depth,
+                                 positive_points,
+                                 negative_points,
+                                 line_segments_coordinates,
+                                 display_dimensions,
+                                 diameters=None,
+                                 volume=None,
+                                 length=None,
+                                 save=False, save_name="",
+                                 mask=None, overlay_text=None):
+    """
+    Displays the image with:
+    1. A single-color mask overlay (if provided).
+    2. Line segments colored based on their diameter values using a heatmap.
+    3. Dashed black lines for line segments without diameter values.
+    Also displays the depth image in the bottom-right corner of the main image.
+
+    Parameters:
+    - image (numpy.ndarray): The main image (BGR format).
+    - depth (numpy.ndarray or None): Depth map to display.
+    - positive_points (list of tuples): Points to mark in red.
+    - negative_points (list of tuples): Points to mark in blue.
+    - line_segments_coordinates (list of tuples): Each tuple contains (y1, x1, y2, x2).
+    - display_dimensions (tuple): (width, height) to resize the final display image.
+    - diameters (list of floats or None): Diameter values corresponding to line segments.
+    - volume (float or None): Volume measurement to display.
+    - length (float or None): Length measurement to display.
+    - save (bool): Whether to save the final image.
+    - save_name (str): Filename to save the image.
+    - mask (numpy.ndarray or None): Binary mask to overlay.
+    - overlay_text (list of str or None): Text instructions to overlay.
+    """
+
+    display_image = image.copy()
+
+    # 1. Apply Mask Overlay (Single Color)
+    if mask is not None:
+        overlay = display_image.copy()
+        overlay[mask == 1] = (0, 255, 0)  # Green mask
+        display_image = cv2.addWeighted(overlay, 0.5, display_image, 0.5, 0)
+
+    # 2. Draw Positive and Negative Points
+    for point in positive_points:
+        cv2.circle(display_image, point, 5, (0, 0, 255), -1)  # Red
+    for point in negative_points:
+        cv2.circle(display_image, point, 5, (255, 0, 0), -1)  # Blue
+
+    # 3. Visualize Line Segments
+    if diameters is not None and len(diameters) == len(line_segments_coordinates):
+        # Normalize diameters for colormap
+        valid_diameters = [d for d in diameters if not np.isnan(d)]
+        if valid_diameters:
+            diameter_min = min(valid_diameters)
+            diameter_max = max(valid_diameters)
+        else:
+            diameter_min, diameter_max = 0, 1  # Prevent division by zero
+
+        def normalize(d):
+            """Normalize diameter to 0-255."""
+            if diameter_max == diameter_min:
+                return 0
+            norm = (d - diameter_min) / (diameter_max - diameter_min)
+            norm = np.clip(norm, 0, 1)
+            return int(norm * 255)
+
+        colormap = cv2.COLORMAP_JET
+
+        for idx, segment in enumerate(line_segments_coordinates):
+            d = diameters[idx]
+            if not np.isnan(d):
+                norm_val = normalize(d)
+                color = cv2.applyColorMap(np.array([[norm_val]], dtype=np.uint8), colormap)[0,0].tolist()
+                color = tuple(map(int, color))  # Convert to tuple of ints
+                cv2.line(display_image, (segment[1], segment[0]), (segment[3], segment[2]), color, 2)
+            else:
+                # Draw dashed black line
+                draw_dashed_line(display_image, (segment[1], segment[0]), (segment[3], segment[2]), (0,0,0), 2, dash_length=10, gap_length=5)
+
+        # Optionally, add a color bar legend here
+
+    elif diameters is not None and len(diameters) != len(line_segments_coordinates):
+        print("Warning: Diameters list and line segments list are not the same length.")
+
+    # 4. Add Instructions Box if Overlay Text is Provided
+    if overlay_text:
+        display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
+        display_image = draw_instructions(display_image, overlay_text, position=(10, 10), font_path=None, font_size=25)
+
+    # 5. Add Depth Image Overlay
+    if depth is not None:
+        display_depth = depth.copy()
+        # Resize the depth image for the bottom-right corner
+        depth_height, depth_width = display_image.shape[0] // 4, display_image.shape[1] // 4  # Resize to 1/4 size
+        resized_depth = cv2.resize(display_depth, (depth_width, depth_height))
+        resized_depth_colored = cv2.applyColorMap(
+            cv2.convertScaleAbs(resized_depth, alpha=255.0 / (np.max(resized_depth) + 1e-5)), cv2.COLORMAP_JET)
+
+        # Place the depth image in the bottom-right corner
+        start_y = display_image.shape[0] - depth_height
+        start_x = display_image.shape[1] - depth_width
+        display_image[start_y:, start_x:] = resized_depth_colored
+
+    # 6. Add Diameter Statistics (Optional)
+    if diameters is not None and valid_diameters:
+        mean_diameter = np.mean(valid_diameters)
+        median_diameter = np.median(valid_diameters)
+        min_diameter = np.min(valid_diameters)
+        max_diameter = np.max(valid_diameters)
+
+        stats_text = [
+            f"Mean: {mean_diameter:.2f} cm",
+            f"Median: {median_diameter:.2f} cm",
+            f"Min: {min_diameter:.2f} cm",
+            f"Max: {max_diameter:.2f} cm"
+        ]
+
+        if volume is not None:
+            stats_text.append(f"Volume: {volume:.2f} ml")
+        if length is not None:
+            stats_text.append(f"Length: {length:.2f} cm")
+
+        # Draw statistics overlay in the upper-right corner
+        display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
+        display_image = draw_instructions(display_image, stats_text, position=(display_image.shape[1] - 250, 10),
+                                          box_size=(230, 200), font_path=None, font_size=25)
+
+    # 7. Save the Image if Required
+    if save:
+        cv2.imwrite(save_name, display_image)
+
+    # 8. Show the Image with Overlays
+    cv2.imshow("Video Feed", display_image)
+    # Note: Handle cv2.waitKey() and cv2.destroyAllWindows() outside this function
+
+def draw_dashed_line(img, pt1, pt2, color, thickness=1, dash_length=10, gap_length=5):
+    """
+    Draws a dashed line between pt1 and pt2.
+
+    Parameters:
+    - img (numpy.ndarray): Image to draw on.
+    - pt1 (tuple): Starting point (x, y).
+    - pt2 (tuple): Ending point (x, y).
+    - color (tuple): Color of the line in BGR.
+    - thickness (int): Thickness of the line.
+    - dash_length (int): Length of the dash.
+    - gap_length (int): Length of the gap.
+    """
+    # Calculate the total length
+    dist = np.hypot(pt2[0] - pt1[0], pt2[1] - pt1[1])
+    # Calculate the number of dashes
+    dash_gap = dash_length + gap_length
+    num_dashes = int(dist / dash_gap)
+
+    # Calculate the direction vector
+    if dist == 0:
+        return
+    dx = (pt2[0] - pt1[0]) / dist
+    dy = (pt2[1] - pt1[1]) / dist
+
+    for i in range(num_dashes + 1):
+        start_x = int(pt1[0] + (dash_gap * i) * dx)
+        start_y = int(pt1[1] + (dash_gap * i) * dy)
+        end_x = int(start_x + dash_length * dx)
+        end_y = int(start_y + dash_length * dy)
+
+        # Ensure not to overshoot
+        if (dx >= 0 and end_x > pt2[0]) or (dx < 0 and end_x < pt2[0]):
+            end_x = pt2[0]
+        if (dy >= 0 and end_y > pt2[1]) or (dy < 0 and end_y < pt2[1]):
+            end_y = pt2[1]
+
+        cv2.line(img, (start_x, start_y), (end_x, end_y), color, thickness)
 
 
 def scale_points(points, scale_x, scale_y):

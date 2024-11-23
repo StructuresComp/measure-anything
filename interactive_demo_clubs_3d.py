@@ -7,7 +7,7 @@ import pyzed.sl as sl
 import os
 from MeasureAnything import MeasureAnything
 from plyfile import PlyData
-from demo_utils import get_click_coordinates, display_with_overlay, scale_points, write_ply_with_lines, get_heatmap_colors
+from demo_utils import get_click_coordinates, display_with_overlay, scale_points, write_ply_with_lines, get_heatmap_colors, display_with_heatmap_overlay
 from clubs_dataset_python.clubs_dataset_tools.common import (CalibrationParams,
                                         convert_depth_uint_to_float)
 from clubs_dataset_python.clubs_dataset_tools.image_registration import (register_depth_image)
@@ -309,7 +309,7 @@ def main():
                     else:
                         current_overlay_text.append("Displaying: All Line Segments \nPress 'g' to toggle")
 
-                display_with_overlay(image_rgb,
+                display_with_heatmap_overlay(image_rgb,
                                         None,
                                         [],
                                         [],
