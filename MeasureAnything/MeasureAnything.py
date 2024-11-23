@@ -1343,3 +1343,12 @@ class MeasureAnything:
                 current_index += 4
 
         return np.array(gripper_points), gripper_lines, gripper_line_colors
+    
+
+class StemInstance:
+    def __init__(self, keypoints, line_segment_coordinates, diameters, processed_mask, overlay_text):
+        self.keypoints = keypoints
+        self.line_segment_coordinates = line_segment_coordinates
+        self.diameters = diameters
+        self.processed_mask = processed_mask
+        self.overlay_text = overlay_text

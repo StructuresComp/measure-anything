@@ -23,4 +23,4 @@ segment_anything_2_tracking_demo/
 
 # Ignore model file
 sam2.1_l.pt
-
+kpd_1.pt
