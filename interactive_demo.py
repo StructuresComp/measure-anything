@@ -107,7 +107,7 @@ def main():
 
                     # Display with current positive and negative points
                     display_with_overlay(resized_image,
-                                         resized_depth,
+                                         None,
                                          prompt_data['positive_points'],
                                          prompt_data['negative_points'],
                                          [],

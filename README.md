@@ -123,7 +123,7 @@ Check `interactive_demo_clubs_3d.py` to run an interactive demonstration on [Clu
   <img src="figures/clubs_3d_00.png" alt="CLUBS 1" width="49%">
 </p>
 <p align="center">
-  <img src="figures/clubs_3d_10.png" alt="CLUBS 2" width="49%">
+  <img src="figures/clubs_3d_10_heatmap.png" alt="CLUBS 2" width="49%">
   <img src="figures/clubs_3d_203.png" alt="CLUBS 3" width="49%">
 </p>
 <p align="center"><em>Robotic Grasping Demo</em></p>
