@@ -138,56 +138,66 @@ def boxes_overlap(box1, box2):
 
 #     return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
-def draw_instructions(image, text_lines, position, box_size=None, font_path=None, font_size=25):
-    """
-    Draws a semi-transparent box with text instructions on the image.
-    The box size is dynamically calculated based on the text content.
+def draw_instructions(image, instructions, position=(10, 10), box_size=(440, 120), font_path="./misc/arial.ttf",
+                      font_size=20):
+    """Draws a semi-transparent box with instructions at the specified position on the image using a custom font."""
 
-    Parameters:
-    - image (numpy.ndarray): The image to draw on.
-    - text_lines (list of str): Lines of text to display.
-    - position (tuple): (x, y) coordinates for the top-left corner of the box.
-    - box_size (tuple or None): (width, height) of the box. If None, calculated based on text.
-    - font_path (str or None): Path to the TTF font file. If None, default font is used.
-    - font_size (int): Font size for the text.
+    # Convert OpenCV image to PIL Image to write text using loaded font
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-    Returns:
-    - image (numpy.ndarray): Image with the drawn instructions.
-    """
-    x, y = position
+    # Load custom font
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except Exception as e:
+        print(f"Error loading font '{font_path}': {e}. Using default font.")
+        font = ImageFont.load_default()
 
-    # Set font
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = font_size / 30  # Adjust font scale based on desired font size
-    font_thickness = 2
+    # Calculate the size of the text box
+    text_width = 0
+    text_height = 0
+    line_spacing = 5  # Adjust line spacing as needed
+    for line in instructions:
+        bbox = font.getbbox(line)
+        line_width = bbox[2] - bbox[0]
+        line_height = bbox[3] - bbox[1]
+        text_width = max(text_width, line_width)
+        text_height += line_height + line_spacing
 
-    # Calculate size of each text line
-    text_sizes = [cv2.getTextSize(line, font, font_scale, font_thickness)[0] for line in text_lines]
-    text_widths = [size[0] for size in text_sizes]
-    text_heights = [size[1] for size in text_sizes]
+    text_height -= line_spacing  # Remove extra spacing after the last line
 
-    # Determine box size based on text
-    padding = 10  # pixels
-    max_text_width = max(text_widths) if text_widths else 0
-    total_text_height = sum(text_heights) + (10 * (len(text_lines) - 1)) if text_heights else 0
+    # Adjust the box size based on text size and padding
+    padding = 10
+    box_width = text_width + 2 * padding
+    box_height = text_height + 2 * padding
 
-    box_width = max_text_width + 2 * padding
-    box_height = total_text_height + 2 * padding
+    # Ensure the box doesn't go beyond the image boundaries
+    image_width, image_height = pil_image.size
+    box_left = position[0]
+    box_top = position[1]
+    box_right = min(box_left + box_width, image_width)
+    box_bottom = min(box_top + box_height, image_height)
 
-    # Draw semi-transparent rectangle
-    overlay = image.copy()
-    cv2.rectangle(overlay, (x, y), (x + box_width, y + box_height), (50, 50, 50), -1)  # Dark gray box
-    alpha = 0.6  # Transparency factor
-    cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0, image)
+    # Draw the semi-transparent rectangle
+    overlay = Image.new("RGBA", pil_image.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    overlay_draw.rectangle(
+        [box_left, box_top, box_right, box_bottom],
+        fill=(255, 255, 255, 180)  # White with transparency
+    )
 
-    # Draw each line of text
-    for idx, line in enumerate(text_lines):
-        text_size = text_sizes[idx]
-        text_x = x + padding
-        text_y = y + padding + text_size[1] + idx * (text_size[1] + 10)  # 10 pixels between lines
-        cv2.putText(image, line, (text_x, text_y), font, font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+    # Composite the overlay with the image
+    pil_image = Image.alpha_composite(pil_image.convert("RGBA"), overlay)
 
-    return image
+    # Draw each line of instruction text
+    draw = ImageDraw.Draw(pil_image)
+    y = box_top + padding
+    for line in instructions:
+        draw.text((box_left + padding, y), line, font=font, fill=(0, 0, 0, 255))
+        bbox = font.getbbox(line)
+        line_height = bbox[3] - bbox[1]
+        y += line_height + line_spacing  # Line height + spacing
+
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
 
 # def display_with_overlay(image,
@@ -507,7 +517,7 @@ def display_with_heatmap_overlay(image,
     # 4. Add Instructions Box if Overlay Text is Provided
     if overlay_text:
         display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
-        display_image = draw_instructions(display_image, overlay_text, position=(10, 10), font_path=None, font_size=25)
+        display_image = draw_instructions(display_image, overlay_text, position=(10, 10), font_path="./misc/arial.ttf", font_size=25)
 
     # 5. Add Depth Image Overlay
     if depth is not None:
@@ -545,7 +555,7 @@ def display_with_heatmap_overlay(image,
         # Draw statistics overlay in the upper-right corner
         display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
         display_image = draw_instructions(display_image, stats_text, position=(display_image.shape[1] - 250, 10),
-                                          box_size=(230, 200), font_path=None, font_size=25)
+                                          box_size=(230, 200), font_path="./misc/arial.ttf", font_size=25)
 
     # 7. Save the Image if Required
     if save:
@@ -554,6 +564,8 @@ def display_with_heatmap_overlay(image,
     # 8. Show the Image with Overlays
     cv2.imshow("Video Feed", display_image)
     # Note: Handle cv2.waitKey() and cv2.destroyAllWindows() outside this function
+
+
 
 def draw_dashed_line(img, pt1, pt2, color, thickness=1, dash_length=10, gap_length=5):
     """

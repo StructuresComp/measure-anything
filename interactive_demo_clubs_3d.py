@@ -29,6 +29,7 @@ def main():
     # parser.add_argument('--measurement_threshold', type=float,
     #                     help='Threshold ratio. eg. 0.1 calculates line segments within bottom 1/10 of the image')
     parser.add_argument('--use_stereo_depth', action='store_true', help='Use stereo depth for depth registration')
+    parser.add_argument('--visualize_heatmap', action='store_true', help='Visualize heatmap of the line segments')
     args = parser.parse_args()
     directory_name = os.path.splitext(os.path.basename(args.input_image))[0]
 
@@ -81,7 +82,7 @@ def main():
     # Main loop for interactive point selection
     while True:
         # Display frame with basic instructions
-        instructions = ["Press 'r' to reset, 'c' to continue, \n'q' to quit"]
+        instructions = ["Press 'r' to reset, 'c' to continue, 'q' to quit"]
         display_with_overlay(resized_image, resized_depth, [], [], [], display_dimensions=[display_width, display_height],
                              diameters=None, save=False, save_name="", mask=None, overlay_text=instructions)
 
@@ -297,19 +298,34 @@ def main():
                     diameters_to_display = grasp_diameters
                     current_overlay_text = overlay_text.copy()
                     if len(current_overlay_text) > 1:
-                        current_overlay_text[1] = "Displaying: Grasp Segments \nPress 'g' to toggle"
+                        current_overlay_text[1] = "Displaying: Grasp Segments, Press 'g' to toggle"
                     else:
-                        current_overlay_text.append("Displaying: Grasp Segments \nPress 'g' to toggle")
+                        current_overlay_text.append("Displaying: Grasp Segments, Press 'g' to toggle")
                 else:
                     segments_to_display = line_segment_coordinates
                     diameters_to_display = diameters
                     current_overlay_text = overlay_text.copy()
                     if len(current_overlay_text) > 1:
-                        current_overlay_text[1] = "Displaying: All Line Segments \nPress 'g' to toggle"
+                        current_overlay_text[1] = "Displaying: All Line Segments, Press 'g' to toggle"
                     else:
-                        current_overlay_text.append("Displaying: All Line Segments \nPress 'g' to toggle")
+                        current_overlay_text.append("Displaying: All Line Segments, Press 'g' to toggle")
+                if args.visualize_heatmap:
+                    display_with_heatmap_overlay(image_rgb,
+                                                None,
+                                                [],
+                                                [],
+                                                segments_to_display,
+                                                diameters=diameters_to_display,
+                                                volume=volume,
+                                                length=length,
+                                                display_dimensions=[display_width, display_height],
+                                                save=False,
+                                                save_name="",
+                                                mask=processed_mask,
+                                                overlay_text=current_overlay_text)
 
-                display_with_heatmap_overlay(image_rgb,
+                else:
+                    display_with_overlay(image_rgb,
                                         None,
                                         [],
                                         [],
