@@ -1,7 +1,7 @@
 # Measure Anything: Real-time, Multi-stage Vision-based Dimensional Measurement using Segment Anything
 
 ---
-**Measure Anything** is an **interactive** / **automated** dimensional measurement tool that leverages the [Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment objects of interest and provide detailed, real-time diameter, length and volume analysis. Our streamlined pipeline comprises four stages: 1) segmentation, 2) binary mask processing, 3) skeleton building, and 4) depth triangulation. We envision that this pipeline can be adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
+**Measure Anything** is an **interactive** / **automated** dimensional measurement tool that leverages the [Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment objects of interest and provide detailed, real-time **diameter**, **length** and **volume** measurements. Our streamlined pipeline comprises five stages: 1) segmentation, 2) binary mask processing, 3) skeleton construction, 4) line segment and depth identification and 5) triangulation and measurement. We envision that this pipeline can be adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
 
 
 
@@ -76,6 +76,9 @@ python interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --thin_a
 - Blue line segments indicate invalid measurements, due to unavailable depth data.
 - The calculated stem diameters are available as a numpy file in `./output/{svo_file_name}/{frame}/diameteres.npy` ordered from the bottom most to the topmost line measurements.
 
+<p align="center">
+<img src="figures/canola.gif" alt="GIF 1" width="98%">
+</p>
 
 [//]: # (The `--stride` and `--measurement_threshold` are optional parameters. `--stride` determines the distance between consecutive measurements, while `--measurement_threshold` specifies the proportion of the image height below which measurements are taken. For instance, setting `--measurement_threshold = 0.5` will limit measurements to the bottom half of the image. The default values for these parameters are 10 for `--stride` and 0.95 for `--measurement_threshold`.)
 
