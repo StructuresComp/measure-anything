@@ -430,6 +430,141 @@ def display_all_overlay_text(image, stem_instances, display_dimensions, mode='ke
     cv2.imshow("Video Feed", display_image)
 
 
+# def display_with_heatmap_overlay(image,
+#                                  depth,
+#                                  positive_points,
+#                                  negative_points,
+#                                  line_segments_coordinates,
+#                                  display_dimensions,
+#                                  diameters=None,
+#                                  volume=None,
+#                                  length=None,
+#                                  save=False, save_name="",
+#                                  mask=None, overlay_text=None):
+#     """
+#     Displays the image with:
+#     1. A single-color mask overlay (if provided).
+#     2. Line segments colored based on their diameter values using a heatmap.
+#     3. Dashed black lines for line segments without diameter values.
+#     Also displays the depth image in the bottom-right corner of the main image.
+
+#     Parameters:
+#     - image (numpy.ndarray): The main image (BGR format).
+#     - depth (numpy.ndarray or None): Depth map to display.
+#     - positive_points (list of tuples): Points to mark in red.
+#     - negative_points (list of tuples): Points to mark in blue.
+#     - line_segments_coordinates (list of tuples): Each tuple contains (y1, x1, y2, x2).
+#     - display_dimensions (tuple): (width, height) to resize the final display image.
+#     - diameters (list of floats or None): Diameter values corresponding to line segments.
+#     - volume (float or None): Volume measurement to display.
+#     - length (float or None): Length measurement to display.
+#     - save (bool): Whether to save the final image.
+#     - save_name (str): Filename to save the image.
+#     - mask (numpy.ndarray or None): Binary mask to overlay.
+#     - overlay_text (list of str or None): Text instructions to overlay.
+#     """
+
+#     display_image = image.copy()
+
+#     # 1. Apply Mask Overlay (Single Color)
+#     if mask is not None:
+#         overlay = display_image.copy()
+#         overlay[mask == 1] = (0, 255, 0)  # Green mask
+#         display_image = cv2.addWeighted(overlay, 0.5, display_image, 0.5, 0)
+
+#     # 2. Draw Positive and Negative Points
+#     for point in positive_points:
+#         cv2.circle(display_image, point, 5, (0, 0, 255), -1)  # Red
+#     for point in negative_points:
+#         cv2.circle(display_image, point, 5, (255, 0, 0), -1)  # Blue
+
+#     # 3. Visualize Line Segments
+#     if diameters is not None and len(diameters) == len(line_segments_coordinates):
+#         # Normalize diameters for colormap
+#         valid_diameters = [d for d in diameters if not np.isnan(d)]
+#         if valid_diameters:
+#             diameter_min = min(valid_diameters)
+#             diameter_max = max(valid_diameters)
+#         else:
+#             diameter_min, diameter_max = 0, 1  # Prevent division by zero
+
+#         def normalize(d):
+#             """Normalize diameter to 0-255."""
+#             if diameter_max == diameter_min:
+#                 return 0
+#             norm = (d - diameter_min) / (diameter_max - diameter_min)
+#             norm = np.clip(norm, 0, 1)
+#             return int(norm * 255)
+
+#         colormap = cv2.COLORMAP_JET
+
+#         for idx, segment in enumerate(line_segments_coordinates):
+#             d = diameters[idx]
+#             if not np.isnan(d):
+#                 norm_val = normalize(d)
+#                 color = cv2.applyColorMap(np.array([[norm_val]], dtype=np.uint8), colormap)[0,0].tolist()
+#                 color = tuple(map(int, color))  # Convert to tuple of ints
+#                 cv2.line(display_image, (segment[1], segment[0]), (segment[3], segment[2]), color, 2)
+#             else:
+#                 # Draw dashed black line
+#                 draw_dashed_line(display_image, (segment[1], segment[0]), (segment[3], segment[2]), (0,0,0), 2, dash_length=10, gap_length=5)
+
+#         # Optionally, add a color bar legend here
+
+#     elif diameters is not None and len(diameters) != len(line_segments_coordinates):
+#         print("Warning: Diameters list and line segments list are not the same length.")
+
+#     # 4. Add Instructions Box if Overlay Text is Provided
+#     if overlay_text:
+#         display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
+#         display_image = draw_instructions(display_image, overlay_text, position=(10, 10), font_path="./misc/arial.ttf", font_size=25)
+
+#     # 5. Add Depth Image Overlay
+#     if depth is not None:
+#         display_depth = depth.copy()
+#         # Resize the depth image for the bottom-right corner
+#         depth_height, depth_width = display_image.shape[0] // 4, display_image.shape[1] // 4  # Resize to 1/4 size
+#         resized_depth = cv2.resize(display_depth, (depth_width, depth_height))
+#         resized_depth_colored = cv2.applyColorMap(
+#             cv2.convertScaleAbs(resized_depth, alpha=255.0 / (np.max(resized_depth) + 1e-5)), cv2.COLORMAP_JET)
+
+#         # Place the depth image in the bottom-right corner
+#         start_y = display_image.shape[0] - depth_height
+#         start_x = display_image.shape[1] - depth_width
+#         display_image[start_y:, start_x:] = resized_depth_colored
+
+#     # 6. Add Diameter Statistics (Optional)
+#     if diameters is not None and valid_diameters:
+#         mean_diameter = np.mean(valid_diameters)
+#         median_diameter = np.median(valid_diameters)
+#         min_diameter = np.min(valid_diameters)
+#         max_diameter = np.max(valid_diameters)
+
+#         stats_text = [
+#             f"Mean: {mean_diameter:.2f} cm",
+#             f"Median: {median_diameter:.2f} cm",
+#             f"Min: {min_diameter:.2f} cm",
+#             f"Max: {max_diameter:.2f} cm"
+#         ]
+
+#         if volume is not None:
+#             stats_text.append(f"Volume: {volume:.2f} ml")
+#         if length is not None:
+#             stats_text.append(f"Length: {length:.2f} cm")
+
+#         # Draw statistics overlay in the upper-right corner
+#         display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
+#         display_image = draw_instructions(display_image, stats_text, position=(display_image.shape[1] - 250, 10),
+#                                           box_size=(230, 200), font_path="./misc/arial.ttf", font_size=25)
+
+#     # 7. Save the Image if Required
+#     if save:
+#         cv2.imwrite(save_name, display_image)
+
+#     # 8. Show the Image with Overlays
+#     cv2.imshow("Video Feed", display_image)
+#     # Note: Handle cv2.waitKey() and cv2.destroyAllWindows() outside this function
+
 def display_with_heatmap_overlay(image,
                                  depth,
                                  positive_points,
@@ -465,6 +600,7 @@ def display_with_heatmap_overlay(image,
     """
 
     display_image = image.copy()
+    diameters = None
 
     # 1. Apply Mask Overlay (Single Color)
     if mask is not None:
@@ -477,6 +613,14 @@ def display_with_heatmap_overlay(image,
         cv2.circle(display_image, point, 5, (0, 0, 255), -1)  # Red
     for point in negative_points:
         cv2.circle(display_image, point, 5, (255, 0, 0), -1)  # Blue
+
+    # Calculate the diameter from euclidean distance between two line segment coordinates, store nan if it is zero
+    if diameters is None:
+        diameters = []
+        for segment in line_segments_coordinates:
+            x1, y1, x2, y2 = segment
+            distance = np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / 46.25
+            diameters.append(distance if distance > 0 else np.nan)
 
     # 3. Visualize Line Segments
     if diameters is not None and len(diameters) == len(line_segments_coordinates):
@@ -547,14 +691,16 @@ def display_with_heatmap_overlay(image,
             f"Max: {max_diameter:.2f} cm"
         ]
 
-        if volume is not None:
+        # Assign None to volume if it is nan
+
+        if not np.isnan(volume):
             stats_text.append(f"Volume: {volume:.2f} ml")
         if length is not None:
             stats_text.append(f"Length: {length:.2f} cm")
 
         # Draw statistics overlay in the upper-right corner
         display_image = cv2.resize(display_image, (display_dimensions[0], display_dimensions[1]))
-        display_image = draw_instructions(display_image, stats_text, position=(display_image.shape[1] - 250, 10),
+        display_image = draw_instructions(display_image, stats_text, position=(display_image.shape[1] - 250, display_image.shape[0] - 190),
                                           box_size=(230, 200), font_path="./misc/arial.ttf", font_size=25)
 
     # 7. Save the Image if Required
