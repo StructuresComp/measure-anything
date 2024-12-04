@@ -1,5 +1,3 @@
-# Description: This script runs the interactive demo of measure anything
-
 import argparse
 import cv2
 import numpy as np
@@ -15,14 +13,12 @@ def main():
     parser.add_argument('--input_svo', type=str, required=True, help='Path to the input .SVO file')
     parser.add_argument('--thin_and_long', action=argparse.BooleanOptionalAction, help='Flag variable that decides whether to skeletonize or use symmetry axis')
     parser.add_argument('--stride', type=int, help='Stride used to calculate line segments')
-    # parser.add_argument('--measurement_threshold', type=float,
-    #                     help='Threshold ratio. eg. 0.1 calculates line segments within bottom 1/10 of the image')
     args = parser.parse_args()
+
     directory_name = os.path.split(args.input_svo)[1].split('.')[0]
 
     # Initialize command line inputs
     stride = args.stride if args.stride else 10
-    # threshold = args.measurement_threshold if args.measurement_threshold else 0.95
 
     # Create a ZED camera object
     zed = sl.Camera()
@@ -135,8 +131,8 @@ def main():
                 if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                     os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                # TODO: remove / for debugging purposes only
-                # cv2.imwrite(f"rgb_{frame_count}.png", image_rgb)
+                # Save RGB
+                cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/rgb.png", image_rgb)
 
                 # Initialize MeasureAnything object
                 object = MeasureAnything(zed=zed, window=25, stride=stride, thin_and_long=args.thin_and_long,
@@ -179,16 +175,10 @@ def main():
                 object.calculate_perpendicular_slope()
                 line_segment_coordinates, depth = object.calculate_line_segment_coordinates_and_depth()
 
-                # TODO: remove / for debugging purposes only
-                # object.visualize_line_segment_in_order_cv(line_segment_coordinates,
-                #                                           image_size=(object.processed_binary_mask_0_255.shape[0],
-                #                                                       object.processed_binary_mask_0_255.shape[1]),
-                #                                           pause_time=500)
-
-                # Calculate dimensional measurements
+                # TODO: Change! Calculate dimensional measurements
                 diameters = object.calculate_diameter(line_segment_coordinates, depth)
                 volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
-                length = object.calculate_length(line_segment_coordinates, depth)
+                # length2 = object.calculate_length(line_segment_coordinates, depth)
 
                 # Save results
                 np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)

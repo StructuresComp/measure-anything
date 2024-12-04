@@ -17,14 +17,12 @@ def main():
     parser.add_argument('--weights', type=str, required=True, help='Path to the YOLO keypoint detection weights (.pt file)')
     parser.add_argument('--thin_and_long', action=argparse.BooleanOptionalAction, help='Flag variable that decides whether to skeletonize or use symmetry axis')
     parser.add_argument('--stride', type=int, help='Stride used to calculate line segments')
-    # parser.add_argument('--measurement_threshold', type=float,
-    #                     help='Threshold ratio. eg. 0.1 calculates line segments within bottom 1/10 of the image')
+
     args = parser.parse_args()
     directory_name = os.path.split(args.input_svo)[1].split('.')[0]
 
     # Initialize command line inputs
     stride = args.stride if args.stride else 10
-    # threshold = args.measurement_threshold if args.measurement_threshold else 0.95
 
     # Create a ZED camera object
     zed = sl.Camera()
@@ -147,10 +145,6 @@ def main():
                             if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                                 os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                            # TODO: remove / for debugging purposes only
-                            # cv2.imwrite(f"rgb_{frame_count}.png", image_rgb)
-
-                            
                             object.detect_mask(image=image_rgb, positive_prompts=positive_prompts,
                                             negative_prompts=negative_prompts)
 

@@ -1,22 +1,28 @@
 # Measure Anything: Real-time, Multi-stage Vision-based Dimensional Measurement using Segment Anything
 
 ---
-**Measure Anything** is an **interactive** / **automated** dimensional measurement tool that leverages the [Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment objects of interest and provide detailed, real-time **diameter**, **length** and **volume** measurements. Our streamlined pipeline comprises five stages: 1) segmentation, 2) binary mask processing, 3) skeleton construction, 4) line segment and depth identification and 5) triangulation and measurement. We envision that this pipeline can be adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
+**Measure Anything** is an **interactive** / **automated** dimensional measurement tool that leverages the 
+[Segment Anything Model (SAM) 2](https://github.com/facebookresearch/sam2) to segment objects of interest and 
+provide real-time, **diameter**, **length** and **volume** measurements. Our streamlined pipeline 
+comprises five stages: 1) segmentation, 2) binary mask processing, 3) skeleton construction, 4) line segment and 
+depth identification and 5) 2D-3D transform and measurement. We envision that this pipeline can be easily
+adapted to other fully automated or minimally human-assisted, vision-based measurement tasks.
 
 
 
 
-[[`Paper`](https://google.com/)] [[`Project`](https://google.com/)]
+[[`Paper`](https://google.com/)] [[`Project`](https://measure-anything.github.io/)]
 
 <p align="center">
-  <img src="figures/canola.gif" alt="GIF 1" width="49%">
-  <img src="figures/tree1.gif" alt="GIF 2" width="49%">
+  <img src="figures/1.gif" alt="GIF 1" width="49%">
+  <img src="figures/6.gif" alt="GIF 2" width="49%">
 </p>
 <p align="center">
-  <img src="figures/tree2.gif" alt="GIF 3" width="49%">
-  <img src="figures/small_tree.gif" alt="GIF 4" width="49%">
+  <img src="figures/7.gif" alt="GIF 3" width="49%">
+  <img src="figures/3.gif" alt="GIF 4" width="49%">
 </p>
-<p align="center"><em>Interactive Demo Examples</em></p>
+
+[//]: # (<p align="center"><em>Interactive Demo Examples</em></p>)
 
 ---
 # Installation #
@@ -55,52 +61,30 @@ $ python3 get_python_api.py
 $ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 ### 4. Install Ultralytics ###
-We use the SAM2 API provided by Ultralytics. The Segment Anything Model checkpoint will be downloaded automatically when running the the demo code for the first time.
+We use the SAM 2 API provided by Ultralytics. The Segment Anything Model checkpoint will be downloaded automatically when running the the demo script for the first time.
 ```bash
 $ pip install ultralytics
 ```
 ### 5. Install remaining dependencies ###
 ```bash
-$ pip install scikit-image scikit-learn pillow
+$ pip install scikit-image scikit-learn pillow plyfile
 ```
 ---
 # Demo #
 ## Interactive Demo ##
-The interactive demo requires `.svo` files from the ZED camera. Example `.svo` files can be found [here](https://drive.google.com/drive/folders/1Q6). Run the demo and follow onscreen instructions.
+The interactive demo requires `.svo` files collected using a ZED stereo camera. Example `.svo` files can be found [here](https://drive.google.com/drive/folders/1Q6). Run the demo and follow onscreen instructions.
 ```bash
 python interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --thin_and_long
 ```
-- `--thin_and_long` is a flag variable that decides the skeleton building method. It is recommended for thin, elongated objects only.
+- `--thin_and_long` is a flag variable that decides the skeleton construction method. Toggling this flag will construct the skeleton based on skeletonization (recommended for rod-like geometries).
 - `--stride (int)` is an optional parameter that determines the distance between consecutive measurements. The default value is 10.
 - Red line indicate valid measurements.
 - Blue line segments indicate invalid measurements, due to unavailable depth data.
-- The calculated stem diameters are available as a numpy file in `./output/{svo_file_name}/{frame}/diameteres.npy` ordered from the bottom most to the topmost line measurements.
+- The calculated stem diameters are available as a numpy file in `./output/{svo_file_name}/{frame}/diameters.npy` ordered from the bottommost to the topmost line measurements.
 
 <p align="center">
 <img src="figures/canola.gif" alt="GIF 1" width="98%">
 </p>
-
-[//]: # (The `--stride` and `--measurement_threshold` are optional parameters. `--stride` determines the distance between consecutive measurements, while `--measurement_threshold` specifies the proportion of the image height below which measurements are taken. For instance, setting `--measurement_threshold = 0.5` will limit measurements to the bottom half of the image. The default values for these parameters are 10 for `--stride` and 0.95 for `--measurement_threshold`.)
-
-[//]: # (<p align="center">)
-
-[//]: # (  <figure style="display: inline-block; width: 49%; margin: 0;">)
-
-[//]: # (    <img src="figures/stride30_ms0p3.png" alt="GIF 3" width="100%">)
-
-[//]: # (    <figcaption style="text-align: center;">stride=30, measurement_threshold=0.3</figcaption>)
-
-[//]: # (  </figure>)
-
-[//]: # (  <figure style="display: inline-block; width: 49%; margin: 0;">)
-
-[//]: # (    <img src="figures/stride10_ms0p95.png" alt="GIF 4" width="100%">)
-
-[//]: # (    <figcaption style="text-align: center;">stride=10, measurement_threshold=0.95</figcaption>)
-
-[//]: # (  </figure>)
-
-[//]: # (</p>)
 
 ## Automated Demo using Keypoint Detection ##
 
@@ -118,7 +102,7 @@ The keypoint detection weights can be specified using the `--weights` parameter.
 
 ## Demo on Robotic Grasping
 
-Measure-Anything can be used to provide geometric priors for obtaining optimized grasping points according to a model. In our experiments we are using a simple stability model based on form-closure and perpendicular distance from CoM. However this stability model can be switched with a SOTA deep learning model.
+Measure Anything can be used to provide geometric priors for obtaining optimized grasping points according to a model. In our experiments we are using a simple stability model based on form-closure and perpendicular distance from CoM. However this stability model can be switched with a SOTA deep learning model.
 
 Check `interactive_demo_clubs_3d.py` to run an interactive demonstration on [Clubs-3D](https://clubs.github.io/#:~:text=CLUBS%20is%20an%20RGB%2DD,objects%20packed%20in%20different%20configurations.) dataset. 
 

@@ -4,9 +4,8 @@
 __pycache__/
 .ipynb_checkpoints/
 
-stemSkel/
-stemSegment/
-stemZ/
+# Ignore all archived files
+archive/
 
 misc/diameter_analysis_plot.ipynb
 misc/diameter_analysis_plot.svg

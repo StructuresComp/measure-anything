@@ -10,8 +10,6 @@ import pyzed.sl as sl
 from ultralytics import SAM
 from scipy.spatial.distance import cdist
 
-import pudb
-
 
 class MeasureAnything:
     def __init__(self, zed, stride, thin_and_long=False, window=30, image_file=None):
@@ -21,8 +19,6 @@ class MeasureAnything:
         self.image_file = image_file
         self.window = int(window)  # Steps in Central difference to compute the local slope
         self.stride = int(stride)  # Increment to next line segment
-        # self.threshold = threshold  # Threshold value for range of line segments.
-        # e.g. 0.5 identifies line segments in bottom half of image
 
         self.thin_and_long = thin_and_long
         self.initial_binary_mask = None
@@ -79,7 +75,7 @@ class MeasureAnything:
         # Find the properties of connected components
         props = measure.regionprops(label_image)
 
-        # Find the largest connected component (assuming it's the stem)
+        # Find the largest connected component
         largest_area = 0
         largest_component = None
         for prop in props:
@@ -125,7 +121,6 @@ class MeasureAnything:
         # Step 1: Apply Medial Axis Transform
         self.skeleton, self.skeleton_distance = morphology.medial_axis(self.processed_binary_mask_0_255,
                                                                        return_distance=True)
-        #self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "raw_skeleton")
 
         # Step 2: Identify endpoints and intersections
         self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
@@ -136,14 +131,14 @@ class MeasureAnything:
                                                        self.intersections, 2 * np.max(self.skeleton_distance))
             self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
 
-        # self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "pruned_skeleton")
-
-        # Step 5: Preserve a single continuous skeleton along path
+        # TODO: Revise path finding method
+        # Step 4: Preserve a single continuous skeleton along path
         # Select two endpoints with the greatest 'y' separation
         start_point = max(self.endpoints, key=lambda x: x[0])  # Endpoint with the highest i value
         end_point = min(self.endpoints, key=lambda x: x[0])  # Endpoint with the lowest i value
 
-        self.skeleton_coordinates, self.skeleton = self._preserve_skeleton_path(self.skeleton, start_point, end_point)
+        self.skeleton_coordinates, self.skeleton = self._preserve_skeleton_path_rev(self.skeleton, self.endpoints)
+        # self.skeleton_coordinates, self.skeleton = self._preserve_skeleton_path(self.skeleton, start_point, end_point)
         self.endpoints, self.intersections = self._identify_key_points(self.skeleton)
         # self.visualize_skeleton(self.processed_binary_mask_0_255, self.skeleton, "continuous_skeleton")
 
@@ -151,10 +146,6 @@ class MeasureAnything:
             raise Exception("Number of endpoints of pruned skeleton is not 2")
 
     def augment_skeleton(self):
-        """
-        Augments the skeleton by extending paths from its endpoints while ensuring the directions are outward,
-        with reversed directions for the bottom endpoint and outward for the top endpoint.
-        """
         # Initialize the augmented skeleton
         augmented_skeleton = self.skeleton.copy()
 
@@ -286,6 +277,48 @@ class MeasureAnything:
         return pruned_skeleton
 
     @staticmethod
+    def _preserve_skeleton_path_rev(skeleton, endpoints):
+        # Sort endpoints by the x-coordinate
+        endpoints = sorted(endpoints, key=lambda x: x[0])
+
+        max_y_separation = -1
+        best_pair = None
+        best_path = None
+
+        # Iterate over each pair of endpoints
+        for i in range(len(endpoints)):
+            for j in range(i + 1, len(endpoints)):
+                start_point = endpoints[i]
+                end_point = endpoints[j]
+
+                # Create a cost array where all skeleton pixels are 1, and non-skeleton pixels are infinity
+                cost_array = np.where(skeleton, 1, np.inf)
+
+                try:
+                    # Attempt to find a path from start_point to end_point
+                    path, _ = graph.route_through_array(cost_array, start_point, end_point, fully_connected=True)
+
+                    # Calculate the vertical separation
+                    y_separation = abs(start_point[0] - end_point[0])
+
+                    # Update the best pair if this separation is the largest found
+                    if y_separation > max_y_separation:
+                        max_y_separation = y_separation
+                        best_pair = (start_point, end_point)
+                        best_path = path
+
+                except ValueError:
+                    # No valid path exists between these points, skip
+                    continue
+
+        # Create a new skeleton with only the path retained
+        path_skeleton = np.zeros_like(skeleton, dtype=bool)
+        if best_path is not None:
+            for y, x in best_path:
+                path_skeleton[y, x] = True
+
+        return best_path, path_skeleton
+    @staticmethod
     def _preserve_skeleton_path(skeleton, start_point, end_point):
         """ Retain only the main path between start_point and end_point in the skeleton. """
         # Create a cost array where all skeleton pixels are 1, and non-skeleton pixels are infinity
@@ -322,41 +355,6 @@ class MeasureAnything:
             
             # Move to the next point based on stride
             i += self.stride
-
-    # def calculate_line_segment_coordinates(self):
-    #     # Get the dimensions of the binary mask
-    #     height, width = self.processed_binary_mask_0_255.shape
-    #
-    #     # Create an array to store the coordinates of the line segment endpoints
-    #     line_segment_coordinates = np.zeros((len(self.slope), 4), dtype=int)
-    #
-    #     idx = 0
-    #     for key, val in self.slope.items():
-    #         # Get skeleton point coordinates
-    #         y, x = key  # Reverse the order for correct indexing
-    #         # Calculate the direction vector for the perpendicular line (normal direction)
-    #         dx = -np.sin(val)
-    #         dy = np.cos(val)
-    #
-    #         # Initialize variables to store the endpoints of the line segment
-    #         x1, y1 = x, y
-    #         x2, y2 = x, y
-    #
-    #         # Step outward from the skeleton point until we hit the contour or go out of bounds in both directions
-    #         while (0 <= int(round(y1)) < height and 0 <= int(round(x1)) < width and
-    #                self.processed_binary_mask_0_255[int(round(y1)), int(round(x1))]):  # Move in one direction
-    #             x1 -= dx
-    #             y1 -= dy
-    #         while (0 <= int(round(y2)) < height and 0 <= int(round(x2)) < width and
-    #                self.processed_binary_mask_0_255[int(round(y2)), int(round(x2))]):  # Move in the opposite direction
-    #             x2 += dx
-    #             y2 += dy
-    #
-    #         # Store the integer coordinates of the endpoints
-    #         line_segment_coordinates[idx] = np.array([int(round(y1)), int(round(x1)), int(round(y2)), int(round(x2))])
-    #         idx += 1
-    #
-    #     return line_segment_coordinates
 
     def calculate_line_segment_coordinates_and_depth(self, threshold=0.1):
 
@@ -463,46 +461,6 @@ class MeasureAnything:
 
         return line_segment_coordinates, np.array(depths)
 
-    @staticmethod
-    def filter_and_replace_outliers_zscore(depths, threshold=2.0):
-
-        def is_outlier(value, mean, std, threshold):
-            """Check if a value is an outlier based on z-score."""
-            return abs((value - mean) / std) > threshold if not np.isnan(value) else False
-
-        # Extract depth1 and depth2 as separate lists
-        depth1_list = np.array([d[0] for d in depths])
-        depth2_list = np.array([d[1] for d in depths])
-
-        # Compute mean and standard deviation, ignoring NaN values
-        mean_d1, std_d1 = np.nanmean(depth1_list), np.nanstd(depth1_list)
-        mean_d2, std_d2 = np.nanmean(depth2_list), np.nanstd(depth2_list)
-
-        # Identify outliers and replace them with nearest inlier neighbors
-        def replace_outliers(depth_array, mean, std):
-            filtered = depth_array.copy()
-            for i, value in enumerate(depth_array):
-                if is_outlier(value, mean, std, threshold):
-                    # Find the nearest non-outlier neighbor
-                    left = next((filtered[j] for j in range(i - 1, -1, -1)
-                                 if not is_outlier(filtered[j], mean, std, threshold)), np.nan)
-                    right = next((filtered[j] for j in range(i + 1, len(filtered))
-                                  if not is_outlier(filtered[j], mean, std, threshold)), np.nan)
-
-                    # Replace with the nearest valid neighbor
-                    filtered[i] = left if not np.isnan(left) else right
-                    if np.isnan(filtered[i]):  # If no valid neighbors exist, retain the NaN
-                        filtered[i] = np.nan
-            return filtered
-
-        # Filter depth1 and depth2
-        filtered_depth1 = replace_outliers(depth1_list, mean_d1, std_d1)
-        filtered_depth2 = replace_outliers(depth2_list, mean_d2, std_d2)
-
-        # Combine the filtered results into a list of tuples
-        filtered_depths = [(d1, d2) for d1, d2 in zip(filtered_depth1, filtered_depth2)]
-        return filtered_depths
-
     def _identify_key_points(self, skeleton_map):
         padded_img = np.zeros((skeleton_map.shape[0] + 2, skeleton_map.shape[1] + 2), dtype=np.uint8)
         padded_img[1:-1, 1:-1] = skeleton_map
@@ -539,37 +497,9 @@ class MeasureAnything:
 
         return consolidated_intersections
 
-    # @staticmethod
-    # def _preserve_largest_area(mask):
-    #     # Connected Component Analysis
-    #     label_image = measure.label(mask, background=0)
-    #
-    #     # Find the properties of connected components
-    #     props = measure.regionprops(label_image)
-    #
-    #     # Find the largest connected component (assuming it's the stem)
-    #     largest_area = 0
-    #     largest_component = None
-    #     for prop in props:
-    #         if prop.area > largest_area:
-    #             largest_area = prop.area
-    #             largest_component = prop
-    #
-    #     # Create a mask for the largest connected component
-    #     mask_in_process = np.zeros_like(mask)
-    #     mask_in_process[label_image == largest_component.label] = 1
-    #
-    #     return mask_in_process
-
     def build_skeleton_from_symmetry_axis(self):
-        """
-        Build the skeleton of a binary mask for non-thin, non-elongated geometries.
+        """ Build the skeleton of a binary mask for general objects by finding symmetry axis """
 
-        Steps:
-        1. Find the closest axis of symmetry.
-        2. Build the skeleton from the centroid in both directions (positive and negative).
-        3. Reverse and concatenate the skeleton parts, then ensure the skeleton starts at the bottommost point.
-        """
         # Step 1: Find the closest axis of symmetry
         centerline, centroid = self._find_closest_symmetry_axis(self.processed_binary_mask)
         self.centroid = centroid
@@ -614,27 +544,15 @@ class MeasureAnything:
 
         self.skeleton_coordinates = np.array(full_skeleton)
 
-        # Step 1: Initialize an empty binary mask
+        # Step 5: Define skeleton map
         self.skeleton = np.zeros_like(self.processed_binary_mask, dtype=np.uint8)
-        
-        # Step 2: Set the skeleton coordinates in the binary mask
         for coord in self.skeleton_coordinates:
             y, x = coord
             self.skeleton[y, x] = 1
 
     @staticmethod
     def _reflect_object(binary_object, centroid, direction):
-        """
-        Reflect a binary object across a given axis defined by a centroid and direction.
-
-        Parameters:
-            binary_object (ndarray): Binary mask of the object.
-            centroid (ndarray): A point on the axis of reflection.
-            direction (ndarray): A unit vector defining the axis of reflection.
-
-        Returns:
-            reflected_object (ndarray): Properly reflected binary mask.
-        """
+        """ Reflect a binary object across a given axis defined by a centroid and direction.  """
         coords = np.argwhere(binary_object)  # Get foreground coordinates
         norm_dir = direction / np.linalg.norm(direction)  # Normalize the direction vector
 
@@ -656,19 +574,7 @@ class MeasureAnything:
         return reflected_object
 
     def _split_and_reflect_score(self, binary_object, centroid, direction):
-        """
-        Compute the symmetry score by splitting the binary object into two parts,
-        reflecting one part, combining it with the original, and comparing against the actual mask.
-        Visualizes the combined parts for debugging or understanding.
-
-        Parameters:
-            binary_object (ndarray): Binary mask of the object.
-            centroid (ndarray): Centroid of the object.
-            direction (ndarray): Direction vector of the symmetry axis.
-
-        Returns:
-            total_score (float): Symmetry score for the given axis.
-        """
+        """ Compute the symmetry score """
         coords = np.argwhere(binary_object)
         norm_dir = direction / np.linalg.norm(direction)  # Normalize the direction vector
 
@@ -704,16 +610,7 @@ class MeasureAnything:
         return total_score
 
     def _find_closest_symmetry_axis(self, binary_object):
-        """
-        Find the closest axis of symmetry for a binary object by evaluating both principal axes.
-
-        Parameters:
-            binary_object (ndarray): Binary mask of the object.
-
-        Returns:
-            best_axis (ndarray): Direction vector of the closest axis of symmetry.
-            centroid (ndarray): Centroid of the mask
-        """
+        """ Find the closest axis of symmetry for a binary object by evaluating both principal axes. """
         # Step 1: Compute the centroid and principal axes
         coords = np.argwhere(binary_object)
         pca = PCA(n_components=2)
@@ -781,33 +678,6 @@ class MeasureAnything:
 
         return diameters
 
-    # def calculate_volume(self, line_segment_coordinates, depth):
-    #     # Step 1: Calculate diameters along the segments
-    #     diameters = self.calculate_diameter(line_segment_coordinates, depth)
-    #     total_height = self.calculate_height(line_segment_coordinates, depth)
-    #     # Step 2: Determine height for each segment
-    #     num_segments = len(line_segment_coordinates) - 1
-    #     if num_segments <= 0:
-    #         raise ValueError("At least two line segments are required to calculate volume.")
-    #     h = total_height / num_segments  # Divide total height into equal segments
-    #
-    #     # Step 3: Initialize total volume
-    #     total_volume = 0.0
-    #
-    #     # Step 4: Iterate through consecutive line segments to compute truncated cone volumes
-    #     for i in range(num_segments):
-    #         # Radii at the current and next segments
-    #         r1 = diameters[i] / 2  # Radius at current segment
-    #         r2 = diameters[i + 1] / 2  # Radius at next segment
-    #
-    #         # Volume of the truncated cone
-    #         volume = (1 / 3) * np.pi * h * (r1 ** 2 + r1 * r2 + r2 ** 2)
-    #
-    #         # Add to total volume
-    #         total_volume += volume
-    #
-    #     return total_volume
-
     def calculate_volume_and_length(self, line_segment_coordinates, depth):
         """ Only returns volume if all line segments are valid"""
         if np.any(depth) == np.nan:
@@ -863,16 +733,7 @@ class MeasureAnything:
 
     def calculate_length(self, line_segment_coordinates, depth):
 
-        """
-        Calculate the 3D length between the bottommost and topmost valid line segments.
-
-        Parameters:
-        - line_segment_coordinates: List of line segment coordinates, where each segment is represented as [y1, x1, y2, x2].
-        - depth: List or numpy array of depth values corresponding to each line segment.
-
-        Returns:
-        - length: The Euclidean distance between the two 3D points.
-        """
+        """ Calculate the 3D length between the bottommost and topmost valid line segments. """
         
         num_segments = len(depth)
         
@@ -928,48 +789,6 @@ class MeasureAnything:
         length = np.linalg.norm(point1_3d - point2_3d)
         
         return length
-
-    # Other util functions
-    # @staticmethod
-    # def visualize_skeleton(mask, skeleton, filename):
-    #     # skeleton = morphology.medial_axis(mask)
-    #     # Convert binary image to an RGB image
-    #     binary_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-    #
-    #     # Define the color for the skeleton overlay (e.g., red)
-    #     skeleton_color = [0, 0, 255]  # RGB for red
-    #
-    #     # Overlay the skeleton
-    #     binary_rgb[skeleton == 1] = skeleton_color
-    #
-    #     # Display the image
-    #     cv2.imwrite(f"{filename}.png", binary_rgb)
-    #
-    # @staticmethod
-    # def visualize_line_segment_in_order_cv(line_segment_coordinates, image_size=(500, 500), pause_time=500):
-    #     # Create a fresh blank image
-    #     display_image = np.zeros((image_size[0], image_size[1], 3), dtype=np.uint8)
-    #
-    #     for idx, segment in enumerate(line_segment_coordinates):
-    #         # Draw the current line segment in red
-    #         cv2.line(
-    #             display_image,
-    #             (segment[1], segment[0]),  # (x1, y1)
-    #             (segment[3], segment[2]),  # (x2, y2)
-    #             (0, 0, 255),  # Red color
-    #             thickness=2,
-    #         )
-    #
-    #         # Display the image with the drawn segment
-    #         cv2.imshow("Line Segment Visualization", display_image)
-    #
-    #         # Pause for visualization
-    #         key = cv2.waitKey(pause_time)
-    #         if key == 27:  # Exit if the user presses 'Esc'
-    #             break
-    #
-    #     # Close the OpenCV window after displaying all segments
-    #     cv2.destroyAllWindows()
 
     def grasp_stability_score(self, line_segment_coordinates, w1=0.5, w2=0.5, top_k=7):
         """
