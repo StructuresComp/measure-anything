@@ -1,5 +1,3 @@
-# Description: This script runs the interactive demo of measure anything
-
 import argparse
 import cv2
 import numpy as np
@@ -17,8 +15,8 @@ def main():
     parser.add_argument('--weights', type=str, required=True, help='Path to the YOLO keypoint detection weights (.pt file)')
     parser.add_argument('--thin_and_long', action=argparse.BooleanOptionalAction, help='Flag variable that decides whether to skeletonize or use symmetry axis')
     parser.add_argument('--stride', type=int, help='Stride used to calculate line segments')
-
     args = parser.parse_args()
+
     directory_name = os.path.split(args.input_svo)[1].split('.')[0]
 
     # Initialize command line inputs
@@ -26,9 +24,6 @@ def main():
 
     # Create a ZED camera object
     zed = sl.Camera()
-
-    # Initialize YOLO Keypoint Detection Model
-    keypoint_model = YOLO(args.weights)
 
     # Initialize the ZED camera, specify depth mode, minimum distance
     init_params = sl.InitParameters(camera_disable_self_calib=True)
@@ -47,6 +42,9 @@ def main():
     frame_count = 0
     prompt_data = {'positive_points': [], 'negative_points': [], 'clicked': False}
 
+    # Initialize YOLO Keypoint Detection Model
+    keypoint_model = YOLO(args.weights)
+
     # Main loop to extract frames and display video
     while True:
         if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
@@ -58,7 +56,6 @@ def main():
             image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGRA2BGR)
 
             # Retrieve the depth frame
-            # Save depth frame as color
             depth_for_display = sl.Mat()
             zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
             image_depth = depth_for_display.get_data()
@@ -166,7 +163,7 @@ def main():
                             cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map_{len(stem_instances)}.png", color_depth_map)
 
                             # Preprocess and save
-                            object.preprocess()
+                            object.process_mask()
                             processed_mask = object.processed_binary_mask
                             cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask_{len(stem_instances)}.png",
                                         object.processed_binary_mask_0_255)
@@ -187,7 +184,6 @@ def main():
                             # Calculate dimensional measurements
                             diameters = object.calculate_diameter(line_segment_coordinates, depth)
                             volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
-                            length = object.calculate_length(line_segment_coordinates, depth)
 
                             # Save results
                             np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters_{len(stem_instances)}.npy", diameters)
@@ -273,8 +269,6 @@ def main():
                                     if not os.path.exists(f"./output/{directory_name}/results_frame_{frame_count}"):
                                         os.makedirs(f"./output/{directory_name}/results_frame_{frame_count}")
 
-                                    # TODO: remove / for debugging purposes only
-                                    # cv2.imwrite(f"rgb_{frame_count}.png", image_rgb)
 
                                     object.detect_mask(image=image_rgb, positive_prompts=positive_prompts,
                                                     negative_prompts=negative_prompts)
@@ -297,7 +291,7 @@ def main():
                                     cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map_{len(stem_instances)}.png", color_depth_map)
 
                                     # Preprocess and save
-                                    object.preprocess()
+                                    object.process_mask()
                                     processed_mask = object.processed_binary_mask
                                     cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask_{len(stem_instances)}.png",
                                                 object.processed_binary_mask_0_255)
@@ -314,16 +308,9 @@ def main():
                                     object.calculate_perpendicular_slope()
                                     line_segment_coordinates, depth = object.calculate_line_segment_coordinates_and_depth()
 
-                                    # TODO: remove / for debugging purposes only
-                                    # object.visualize_line_segment_in_order_cv(line_segment_coordinates,
-                                    #                                           image_size=(object.processed_binary_mask_0_255.shape[0],
-                                    #                                                       object.processed_binary_mask_0_255.shape[1]),
-                                    #                                           pause_time=500)
-
                                     # Calculate dimensional measurements
                                     diameters = object.calculate_diameter(line_segment_coordinates, depth)
                                     volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
-                                    length = object.calculate_length(line_segment_coordinates, depth)
 
                                     # Save results
                                     np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters_{len(stem_instances)}.npy", diameters)

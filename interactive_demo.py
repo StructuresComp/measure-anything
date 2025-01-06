@@ -51,7 +51,6 @@ def main():
             image_rgb = cv2.cvtColor(image_ocv, cv2.COLOR_BGRA2BGR)
 
             # Retrieve the depth frame
-            # Save depth frame as color
             depth_for_display = sl.Mat()
             zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
             image_depth = depth_for_display.get_data()
@@ -140,25 +139,14 @@ def main():
                 object.detect_mask(image=image_rgb, positive_prompts=positive_prompts,
                                    negative_prompts=negative_prompts)
 
-                # Save initial mask
-                cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/initial_mask.png",
-                            (object.initial_binary_mask * 255).astype(np.uint8))
-
-                # Save depth frame as color
-                depth_for_display = sl.Mat()
-                zed.retrieve_image(depth_for_display, sl.VIEW.DEPTH)
-                depth_map = depth_for_display.get_data()
-                depth_map = depth_map[:, :, 0]
-                # Normalize if needed (assuming depth_map is already in 8-bit range)
-                depth_map_norm = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-
+                # Process depth frame and save as color
+                depth_map_norm = cv2.normalize(image_depth, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
                 color_depth_map = cv2.applyColorMap(depth_map_norm, cv2.COLORMAP_JET)
-                color_depth_map[depth_map == 0] = [0, 0, 0]
-
+                color_depth_map[image_depth == 0] = [0, 0, 0]
                 cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
 
-                # Preprocess and save
-                object.preprocess()
+                # Process mask and save
+                object.process_mask()
                 processed_mask = object.processed_binary_mask
                 cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
                             object.processed_binary_mask_0_255)
@@ -175,10 +163,9 @@ def main():
                 object.calculate_perpendicular_slope()
                 line_segment_coordinates, depth = object.calculate_line_segment_coordinates_and_depth()
 
-                # TODO: Change! Calculate dimensional measurements
+                # Calculate measurements
                 diameters = object.calculate_diameter(line_segment_coordinates, depth)
                 volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
-                # length2 = object.calculate_length(line_segment_coordinates, depth)
 
                 # Save results
                 np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
