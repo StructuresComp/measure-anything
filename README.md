@@ -28,22 +28,22 @@ adapted to other fully automated or minimally human-assisted, vision-based measu
 # Installation #
 ### 1. Create conda environment for managing dependencies ###
 ```bash
-$ conda create --name <environment> python=3.12
-$ conda activate <environment>
+conda create --name <environment> python=3.12
+conda activate <environment>
 ```
 ### 2. Setting up the ZED SDK and Python API ###
 This repository was tested with the ZED SDK 4.2.1 and CUDA 12 on Ubuntu 22.04. To set up the ZED SDK, follow these steps:
 - Install dependencies
 ```bash
-$ pip install cython numpy==1.26.4 opencv-python==4.9.0.80 pyopengl
+pip install cython numpy==1.26.4 opencv-python==4.9.0.80 pyopengl
 ```
 - Download the ZED SDK from the [official website](https://www.stereolabs.com/developers/release#82af3640d775)
 - Run the ZED SDK Installer
 ```bash
-$ cd path/to/download/folder
-$ sudo apt install zstd
-$ chmod +x ZED_SDK_Ubuntu22_cuda12.1_v4.2.1.zstd.run
-$ ./ZED_SDK_Ubuntu22_cuda12.1_v4.2.1.zstd.run
+cd path/to/download/folder
+sudo apt install zstd
+chmod +x ZED_SDK_Ubuntu22_cuda12.1_v4.2.1.zstd.run
+/ZED_SDK_Ubuntu22_cuda12.1_v4.2.1.zstd.run
 ```
 - To install the Python API, press Y to the following when running the installer:
 ``` bash
@@ -51,23 +51,23 @@ Do you want to install the Python API (recommended) [Y/n] ?
 ``` 
   or alternatively, you can install the Python API separately running the following script:
 ```bash
-$ cd "/usr/local/zed/"
-$ python3 get_python_api.py
+cd "/usr/local/zed/"
+python3 get_python_api.py
 ````
 ### 3. Install Pytorch ###
 - Follow instructions on the [official website](https://pytorch.org/get-started/locally/)
 - For example, to install Pytorch with CUDA 12.1:
 ```bash
-$ pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 ### 4. Install Ultralytics ###
 We use the SAM 2 API provided by Ultralytics. The Segment Anything Model checkpoint will be downloaded automatically when running the the demo script for the first time.
 ```bash
-$ pip install ultralytics
+pip install ultralytics
 ```
 ### 5. Install remaining dependencies ###
 ```bash
-$ pip install scikit-image scikit-learn pillow plyfile
+pip install scikit-image scikit-learn pillow plyfile
 ```
 ---
 # Demo #
