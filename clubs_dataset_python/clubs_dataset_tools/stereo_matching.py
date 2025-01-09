@@ -112,7 +112,7 @@ class StereoMatchingParams(object):
                   yaml_file)
 
         with open(yaml_file, 'r') as file_pointer:
-            stereo_params = yaml.load(file_pointer)
+            stereo_params = yaml.load(file_pointer, Loader=yaml.FullLoader)
 
         self.d415_min_disparity = stereo_params['d415_min_disparity']
         self.d415_num_disparities = stereo_params['d415_num_disparities']

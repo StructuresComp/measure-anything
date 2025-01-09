@@ -170,6 +170,7 @@ if __name__ == '__main__':
     used_scenes = []
 
     stereo_params = StereoMatchingParams()
+    print(args.stereo_params_file)
     stereo_params.read_from_yaml(args.stereo_params_file)
     calib_params = CalibrationParams()
 

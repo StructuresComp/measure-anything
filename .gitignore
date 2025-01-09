@@ -19,6 +19,7 @@ output/
 test/
 sam2/
 segment_anything_2_tracking_demo/
+data/
 
 # Ignore model file
 sam2.1_l.pt

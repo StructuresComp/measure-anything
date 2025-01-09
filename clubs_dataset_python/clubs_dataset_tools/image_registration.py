@@ -21,8 +21,8 @@ def depth_to_3d(depth_image, intrinsics):
     cx, cy = intrinsics[0, 2], intrinsics[1, 2]
     
     # Calculate the real-world coordinates
-    x = (j - cx) * depth_image / fx
-    y = (i - cy) * depth_image / fy
+    y = (j - cy) * depth_image / fx
+    x = (i - cx) * depth_image / fy
     z = depth_image
     
     # Stack into a 3D point cloud

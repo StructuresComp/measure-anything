@@ -11,13 +11,19 @@ from skimage import measure, morphology, graph
 from sklearn.cluster import DBSCAN
 
 # Import the base class from its module
-from original_module import MeasureAnything  # Replace 'original_module' with the actual module name where MeasureAnything is defined
+from .MeasureAnything import MeasureAnything
 
 class MeasureGrasp(MeasureAnything):
     def __init__(self, zed, stride, thin_and_long=False, window=30, image_file=None):
         # Initialize the base class
         super().__init__(zed, stride, thin_and_long, window, image_file)
         # Additional initialization for grasp functionality can be added here if needed
+    
+    def update_calibration_params(self, depth, intrinsics, distortion=[0, 0, 0, 0, 0]):
+        self.depth = depth
+        self.fx, self.fy = intrinsics[1, 1], intrinsics[0, 0]
+        self.cx, self.cy = intrinsics[0, 2], intrinsics[1, 2]
+        self.k1, self.k2, self.p1, self.p2, self.k3 = distortion[0:5]
 
     def grasp_stability_score(self, line_segment_coordinates, w1=0.5, w2=0.5, top_k=7):
         """
@@ -136,6 +142,14 @@ class MeasureGrasp(MeasureAnything):
         top_segments = line_segment_coordinates[selected_indices]
 
         return top_segments, selected_indices
+    
+    def depth_values_to_3d_points(self, x, y, depth, intrinsics):
+        fx, fy = intrinsics[0, 0], intrinsics[1, 1]
+        cx, cy = intrinsics[0, 2], intrinsics[1, 2]
+        x_3d = (x - cx) * depth / fx
+        y_3d = (y - cy) * depth / fy
+        z_3d = depth
+        return [x_3d, y_3d, z_3d]
 
     def convert_grasp_to_3d(self, grasp, depth_values, rgb_intrinsics):
         """

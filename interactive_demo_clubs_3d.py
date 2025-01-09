@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pyzed.sl as sl
 import os
-from MeasureAnything import MeasureAnything
+from MeasureAnything import MeasureAnything, MeasureGrasp
 from plyfile import PlyData
 from demo_utils import get_click_coordinates, display_with_overlay, scale_points, write_ply_with_lines, get_heatmap_colors, display_with_heatmap_overlay
 from clubs_dataset_python.clubs_dataset_tools.common import (CalibrationParams,
@@ -145,7 +145,7 @@ def main():
             # cv2.imwrite(f"rgb_{frame_count}.png", image_rgb)
 
             # Initialize MeasureAnything object
-            object = MeasureAnything(zed=None, window=25, stride=stride, thin_and_long=args.thin_and_long,
+            object = MeasureGrasp(zed=None, window=25, stride=stride, thin_and_long=args.thin_and_long,
                                         image_file=None)
             
             float_image_depth = convert_depth_uint_to_float(image_depth, calib_params.z_scaling, calib_params.depth_scale)
@@ -168,7 +168,7 @@ def main():
             cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/depth_map.png", color_depth_map)
 
             # Preprocess and save
-            object.preprocess()
+            object.process_mask()
             processed_mask = object.processed_binary_mask
             cv2.imwrite(f"./output/{directory_name}/results_frame_{frame_count}/processed_mask.png",
                         object.processed_binary_mask_0_255)
@@ -195,7 +195,6 @@ def main():
             # Calculate dimensional measurements
             diameters = object.calculate_diameter(line_segment_coordinates, depth)
             volume, length = object.calculate_volume_and_length(line_segment_coordinates, depth)
-            length = object.calculate_length(line_segment_coordinates, depth)
 
             # Save results
             np.save(f"./output/{directory_name}/results_frame_{frame_count}/diameters.npy", diameters)
