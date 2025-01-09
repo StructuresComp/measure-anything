@@ -90,6 +90,12 @@ python interactive_demo.py --input_svo path/to/svo/file.svo --stride 10 --thin_a
 
 The keypoint detection weights can be specified using the `--weights` parameter. This enables automated point prompting for segmentation. If the automated segmentations are inaccurate, users can manually intervene to refine the results. The keypoints can be configured as positive prompts or a combination of positive and negative prompts, depending on the specific requirements of the video.
 
+You can run the demo and follow the instructions on the window for interaction.
+
+```bash
+python interactive_demo.py --input_svo path/to/svo/ --weights path/to/checkpoint file.svo --stride 10 --thin_and_long
+```
+
 <p align="center">
   <img src="figures/kpd_1_1.gif" alt="KPD GIF 1" width="49%">
   <img src="figures/kpd_1_2.gif" alt="KPD GIF 2" width="49%">
@@ -106,6 +112,10 @@ Measure Anything can be used to provide geometric priors for obtaining optimized
 
 Check `interactive_demo_clubs_3d.py` to run an interactive demonstration on [Clubs-3D](https://clubs.github.io/#:~:text=CLUBS%20is%20an%20RGB%2DD,objects%20packed%20in%20different%20configurations.) dataset. 
 
+```bash
+python interactive_demo_clubs_3d.py --input_image path/to/input/image --depth_image path/to/depth/image --sensor <sensor_name>
+```
+
 <p align="center">
   <img src="figures/clubs_3d_00.png" alt="CLUBS 1" width="49%">
 </p>
@@ -114,3 +124,11 @@ Check `interactive_demo_clubs_3d.py` to run an interactive demonstration on [Clu
   <img src="figures/clubs_3d_203.png" alt="CLUBS 3" width="49%">
 </p>
 <p align="center"><em>Robotic Grasping Demo</em></p>
+
+To make the Clubs-3D files ready for demo, you can follow download from [Clubs-3D](https://clubs.github.io/#:~:text=CLUBS%20is%20an%20RGB%2DD,objects%20packed%20in%20different%20configurations.) dataset, and follow the commands below. Also use the registered depth images in the demo above.
+
+```bash
+cd clubs_dataset_python/
+python register_depth_images.py --scene_folder path/to/scene/folder
+python generate_point_clouds.py --scene_folder path/to/scene/folder --use_registered_depth
+```
